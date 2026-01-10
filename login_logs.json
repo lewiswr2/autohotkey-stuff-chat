@@ -1,3 +1,13 @@
 {
-  "logs": []
+  "logs": [
+    {
+      "t": "2026-01-10 22:18:55",
+      "pc": "DUMMY-PC",
+      "user": "DUMMY",
+      "discordId": "1247055057489231914",
+      "hwid": "1525703921",
+      "role": "user",
+      "loginUser": "dummy"
+    }
+  ]
 }
