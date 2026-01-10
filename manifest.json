@@ -1,26 +1,16 @@
 {
   "version": "1.0.0",
-  "launcher_version": "1.0.0",
-  "master_key": "A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7",
-  "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
-  "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
-  "webhook": "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_",
+  "zip_url": "https://github.com/yourusername/yourrepo/archive/refs/heads/main.zip",
+  "changelog": [
+    "Initial release",
+    "Security improvements"
+  ],
   "cred_user": "AHKvaultmacros@discord",
-  "cred_hash": "1105182512",
-  "cred_password": "test123",
+  "cred_hash": "1234567890",
+  "webhook": "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL",
   "banned_discord_ids": [],
   "admin_discord_ids": [
-    "1247055057489231914",
-    "886398974456655892"
+    "1234567890123456789"
   ],
-  "banned_hwids": [
-    "1111"
-  ],
-  "hwid_bindings": {
-    "1247055057489231914": "1525703921",
-    "886398974456655892": "160377749"
-  },
-  "changelog": [
-    "QoL Changes :)"
-  ]
+  "banned_hwids": []
 }
