@@ -1,7 +1,7 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
-global LAUNCHER_VERSION := "2.0.4"
+global LAUNCHER_VERSION := "2.0.5"
 
 ; ================= CONFIG =================
 global APP_DIR := A_AppData "\MacroLauncher"
@@ -113,7 +113,6 @@ CheckForUpdatesPrompt() {
     if (choice = "No")
         return
 
-    ; ---- download zip with retry ----
     downloadSuccess := false
     attempts := 0
     maxAttempts := 3
@@ -139,7 +138,6 @@ CheckForUpdatesPrompt() {
         return
     }
 
-    ; ---- prep extract dir ----
     try {
         if DirExist(extractDir)
             DirDelete extractDir, true
@@ -149,7 +147,6 @@ CheckForUpdatesPrompt() {
         return
     }
 
-    ; ---- extract (KEEP github extraction: tar then powershell) ----
     extractSuccess := false
     try {
         RunWait 'tar -xf "' tmpZip '" -C "' extractDir '"', , "Hide"
@@ -174,7 +171,6 @@ CheckForUpdatesPrompt() {
         return
     }
 
-    ; ---- detect structure ----
     hasMacrosFolder := DirExist(extractDir "\Macros")
     hasIconsFolder := DirExist(extractDir "\icons")
     hasLooseFolders := HasAnyFolders(extractDir)
@@ -185,7 +181,6 @@ CheckForUpdatesPrompt() {
         return
     }
 
-    ; ---- backup ----
     backupSuccess := false
     if DirExist(BASE_DIR) {
         try {
@@ -194,12 +189,10 @@ CheckForUpdatesPrompt() {
                 TryDirMove(A_LoopFilePath, backupDir "\" A_LoopFileName, true)
             backupSuccess := true
         } catch as err {
-            ; backup failing shouldn't hard-stop; we can still try install
             backupSuccess := false
         }
     }
 
-    ; ---- install (this is where members usually fail; now it will show why) ----
     try {
         if DirExist(BASE_DIR)
             DirDelete BASE_DIR, true
@@ -215,7 +208,6 @@ CheckForUpdatesPrompt() {
             }
         }
     } catch as err {
-        ; rollback
         try {
             if backupSuccess {
                 if DirExist(BASE_DIR)
@@ -235,7 +227,6 @@ CheckForUpdatesPrompt() {
         return
     }
 
-    ; ---- icons ----
     iconsUpdated := false
     if hasIconsFolder {
         try {
@@ -246,12 +237,10 @@ CheckForUpdatesPrompt() {
                 iconsUpdated := true
             }
         } catch as err {
-            ; icon failure shouldn't kill the entire update, but we can show it
             ShowUpdateFail("Copy icons", err, "ICON_DIR=`n" ICON_DIR)
         }
     }
 
-    ; ---- version file ----
     try {
         if FileExist(VERSION_FILE)
             FileDelete VERSION_FILE
@@ -261,7 +250,6 @@ CheckForUpdatesPrompt() {
         ShowUpdateFail("Write version file", err, "VERSION_FILE=`n" VERSION_FILE)
     }
 
-    ; ---- cleanup ----
     try {
         if FileExist(tmpZip)
             FileDelete tmpZip
@@ -300,6 +288,13 @@ ManualUpdate(*) {
         return
     }
     
+    ; 🔥 DELETE VERSION FILE BEFORE CHECKING
+    try {
+        if FileExist(VERSION_FILE)
+            FileDelete VERSION_FILE
+    } catch {
+    }
+    
     tmpManifest := A_Temp "\manifest.json"
     tmpZip := A_Temp "\Macros.zip"
     extractDir := A_Temp "\macro_extract"
@@ -330,23 +325,6 @@ ManualUpdate(*) {
         return
     }
     
-    current := "0"
-    try {
-        if FileExist(VERSION_FILE) {
-            current := Trim(FileRead(VERSION_FILE))
-        }
-    }
-    
-    if VersionCompare(manifest.version, current) <= 0 {
-        MsgBox(
-            "You already have the latest version!`n`n"
-            "Current version: " current,
-            "Up to Date",
-            "Iconi"
-        )
-        return
-    }
-    
     changelogText := ""
     for line in manifest.changelog {
         changelogText .= "• " line "`n"
@@ -354,7 +332,6 @@ ManualUpdate(*) {
     
     choice := MsgBox(
         "Update available!`n`n"
-        "Current: " current "`n"
         "Latest: " manifest.version "`n`n"
         "What's new:`n" changelogText "`n"
         "Download and install now?",
@@ -807,8 +784,6 @@ CreateMainGui() {
     
     linkY := bottomY + 15
     CreateLink(mainGui, "Discord", "https://discord.gg/PQ85S32Ht8", 25, linkY)
-
- 
     
     mainGui.Show("w550 h" (bottomY + 60) " Center")
 }
@@ -1615,3 +1590,5 @@ IsValidZip(path) {
         return false
     }
 }
+
+
