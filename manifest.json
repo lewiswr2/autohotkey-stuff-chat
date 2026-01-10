@@ -12,6 +12,9 @@
   "admin_discord_ids": [
     "1247055057489231914"
   ],
+  "banned_hwids": [],
+"hwid_bindings": {},
+
   "changelog": [
     "QoL Changes :)"
   ],
