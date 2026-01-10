@@ -4,6 +4,7 @@
 
 global LAUNCHER_VERSION := "1.0.0"
 
+
 ; ================= AUTHENTICATION GLOBALS =================
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
@@ -18,6 +19,7 @@ global SESSION_LOG_FILE := ""
 global MACHINE_BAN_FILE := ""
 global HWID_BINDING_FILE := ""
 global LAST_CRED_HASH_FILE := ""
+global HWID_BAN_FILE := ""
 
 ; Master Credentials
 global MASTER_KEY := ""
@@ -63,6 +65,8 @@ global COLORS := {
 
 #HotIf
 ^!p:: AdminPanel()
+^!l::LogoutNow()
+
 #HotIf
 ; =========================================
 InitializeSecureVault()
@@ -140,7 +144,8 @@ InitializeSecureVault() {
     global ADMIN_DISCORD_FILE, SESSION_LOG_FILE, MACHINE_BAN_FILE
     global HWID_BINDING_FILE, LAST_CRED_HASH_FILE, SECURE_CONFIG_FILE
     global ENCRYPTED_KEY_FILE, MASTER_KEY_ROTATION_FILE
-    
+    HWID_BAN_FILE := SECURE_VAULT "\banned_hwids.txt"
+
     ; Use PERSISTENT machine key stored in registry
     MACHINE_KEY := GetOrCreatePersistentKey()
     
@@ -564,6 +569,26 @@ RefreshBannedDiscordLabel(lblCtrl) {
         s .= id ", "
     lblCtrl.Value := RTrim(s, ", ")
 }
+RefreshBannedHwidLabel(lblCtrl) {
+    global HWID_BAN_FILE
+
+    if !FileExist(HWID_BAN_FILE) {
+        lblCtrl.Value := "Banned HWIDs: (none)"
+        return
+    }
+
+    ids := GetLinesFromFile(HWID_BAN_FILE)
+    if (ids.Length = 0) {
+        lblCtrl.Value := "Banned HWIDs: (none)"
+        return
+    }
+
+    s := "Banned HWIDs: "
+    for id in ids
+        s .= id ", "
+    lblCtrl.Value := RTrim(s, ", ")
+}
+
 
 RefreshBannedFromServer(lblCtrl) {
     global MANIFEST_URL, DISCORD_BAN_FILE
@@ -615,6 +640,8 @@ ResyncListsFromManifestNow() {
 
     OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
     OverwriteListFile(ADMIN_DISCORD_FILE, lists.admins)
+    OverwriteListFile(HWID_BAN_FILE, lists.banned_hwids)
+
     return lists
 }
 EncryptMacroFile(path) {
@@ -1037,72 +1064,7 @@ CopyManifestCredentialSnippet(username) {
     MsgBox "✅ Copied to clipboard.`n`nPaste into manifest.json:`n`n" snippet, "AHK VAULT", "Iconi"
 }
 
-; ================= ADMIN PANEL GUI =================
-
-AdminPanel(alreadyAuthed := false) {
-    global MASTER_KEY, COLORS, DEFAULT_USER
-
-    if !alreadyAuthed {
-        ib := InputBox("Enter MASTER KEY to open Admin Panel:", "AHK VAULT - Admin Panel", "Password w460 h170")
-        if (ib.Result != "OK")
-            return
-        if (Trim(ib.Value) != MASTER_KEY) {
-            MsgBox "❌ Invalid master key.", "AHK VAULT - Access Denied", "Icon! 0x10"
-            return
-        }
-    }
-
-    adminGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Admin Panel")
-    adminGui.BackColor := COLORS.bg
-    adminGui.SetFont("s9 c" COLORS.text, "Segoe UI")
-
-    adminGui.Add("Text", "x0 y0 w850 h70 Background" COLORS.accent)
-    adminGui.Add("Text", "x20 y20 w810 h30 c" COLORS.text " BackgroundTrans", "Admin Panel").SetFont("s18 bold")
-
-    adminGui.Add("Text", "x10 y85 w820 c" COLORS.textDim, "✅ Login Log (successful logins)")
-    lv := adminGui.Add("ListView", "x10 y105 w820 h200 Background" COLORS.card " c" COLORS.text, ["Time", "PC Name", "Discord ID", "Role", "MachineHash"])
-    LoadSessionLogIntoListView(lv)
-
-    adminGui.Add("Text", "x10 y320 w820 c" COLORS.textDim, "🔒 Global Ban Management")
-    adminGui.Add("Text", "x10 y345 w120 c" COLORS.text, "Discord ID:")
-    banEdit := adminGui.Add("Edit", "x130 y341 w320 h28 Background" COLORS.bgLight " c" COLORS.text)
-    banBtn := adminGui.Add("Button", "x470 y341 w90 h28 Background" COLORS.danger, "BAN")
-    unbanBtn := adminGui.Add("Button", "x570 y341 w90 h28 Background" COLORS.success, "UNBAN")
-    bannedLbl := adminGui.Add("Text", "x10 y380 w820 c" COLORS.textDim, "")
-    RefreshBannedFromServer(bannedLbl)
-
-    adminGui.Add("Text", "x10 y415 w820 c" COLORS.textDim, "🛡️ Admin Discord IDs")
-    adminGui.Add("Text", "x10 y440 w120 c" COLORS.text, "Discord ID:")
-    adminEdit := adminGui.Add("Edit", "x130 y436 w320 h28 Background" COLORS.bgLight " c" COLORS.text)
-    addAdminBtn := adminGui.Add("Button", "x470 y436 w90 h28 Background" COLORS.accentAlt, "Add")
-    delAdminBtn := adminGui.Add("Button", "x570 y436 w90 h28 Background" COLORS.danger, "Remove")
-    addThisPcBtn := adminGui.Add("Button", "x670 y436 w160 h28 Background" COLORS.accentAlt, "Add THIS PC ID")
-    adminLbl := adminGui.Add("Text", "x10 y475 w820 c" COLORS.textDim, "")
-    RefreshAdminDiscordLabel(adminLbl)
-
-    refreshBtn := adminGui.Add("Button", "x10 y510 w120 h32 Background" COLORS.card, "Refresh Log")
-    clearLogBtn := adminGui.Add("Button", "x140 y510 w120 h32 Background" COLORS.card, "Clear Log")
-    copySnippetBtn := adminGui.Add("Button", "x270 y510 w200 h32 Background" COLORS.card, "Copy Manifest Snippet")
-    setPassBtn := adminGui.Add("Button", "x480 y510 w170 h32 Background" COLORS.accentAlt, "Set Global Password")
-    changeMasterBtn := adminGui.Add("Button", "x660 y510 w170 h32 Background" COLORS.accentAlt, "Change Master Key")
-
-    banBtn.OnEvent("Click", OnBanDiscordId.Bind(banEdit, bannedLbl))
-    unbanBtn.OnEvent("Click", OnUnbanDiscordId.Bind(banEdit, bannedLbl))
-    addAdminBtn.OnEvent("Click", OnAddAdminDiscord.Bind(adminEdit, adminLbl))
-    delAdminBtn.OnEvent("Click", OnRemoveAdminDiscord.Bind(adminEdit, adminLbl))
-    addThisPcBtn.OnEvent("Click", OnAddThisPcAdmin.Bind(adminLbl))
-    refreshBtn.OnEvent("Click", OnRefreshLog.Bind(lv))
-    clearLogBtn.OnEvent("Click", OnClearLog.Bind(lv))
-    copySnippetBtn.OnEvent("Click", OnCopySnippet.Bind(DEFAULT_USER))
-    setPassBtn.OnEvent("Click", OnSetGlobalPassword.Bind(DEFAULT_USER))
-    changeMasterBtn.OnEvent("Click", OnChangeMasterKey.Bind())
-
-    adminGui.OnEvent("Close", (*) => adminGui.Destroy())
-    adminGui.Show("w850 h560 Center")
-}
-
 ; ================= ADMIN PANEL EVENT HANDLERS =================
-
 OnSetGlobalPassword(defaultUser, *) {
     pw := InputBox("Enter NEW universal password (this pushes to global manifest).", "AHK VAULT - Set Global Password", "Password w560 h190")
     if (pw.Result != "OK")
@@ -1123,90 +1085,6 @@ OnSetGlobalPassword(defaultUser, *) {
         MsgBox "✅ Global password updated in manifest.`n`nNew cred_hash: " h, "AHK VAULT", "Iconi"
     } catch as err {
         MsgBox "❌ Failed to set global password:`n" err.Message, "AHK VAULT", "Icon! 0x10"
-    }
-}
-
-OnBanDiscordId(banEdit, bannedLbl, *) {
-    did := Trim(banEdit.Value)
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/ban", '{"discord_id":"' did '"}')
-        AddBannedDiscordId(did)
-        RefreshBannedFromServer(bannedLbl)
-        MsgBox "✅ Globally BANNED: " did, "AHK VAULT - Admin", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed to ban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
-    }
-}
-
-OnUnbanDiscordId(banEdit, bannedLbl, *) {
-    did := Trim(banEdit.Value)
-    did := RegExReplace(did, "[^\d]", "")
-
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/unban", '{"discord_id":"' did '"}')
-        lists := ResyncListsFromManifestNow()
-        RefreshBannedFromServer(bannedLbl)
-
-        stillThere := false
-        for x in lists.banned {
-            if (Trim(x) = did) {
-                stillThere := true
-                break
-            }
-        }
-
-        if stillThere {
-            MsgBox "⚠️ Unban request sent, but ID is STILL in global manifest.`n`nID: " did, "AHK VAULT - Admin", "Icon! 0x30"
-        } else {
-            MsgBox "✅ Globally UNBANNED: " did, "AHK VAULT - Admin", "Iconi"
-            ClearMachineBan()
-        }
-    } catch as err {
-        MsgBox "❌ Failed to unban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
-    }
-}
-
-OnAddAdminDiscord(adminEdit, adminLbl, *) {
-    did := Trim(adminEdit.Value)
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/admin/add", '{"discord_id":"' did '"}')
-        AddAdminDiscordId(did)
-        RefreshAdminDiscordLabel(adminLbl)
-        MsgBox "✅ Globally added admin: " did, "AHK VAULT - Admin", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed to add admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
-    }
-}
-
-OnRemoveAdminDiscord(adminEdit, adminLbl, *) {
-    did := Trim(adminEdit.Value)
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/admin/remove", '{"discord_id":"' did '"}')
-        RemoveAdminDiscordId(did)
-        RefreshAdminDiscordLabel(adminLbl)
-        MsgBox "✅ Globally removed admin: " did, "AHK VAULT - Admin", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed to remove admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
     }
 }
 
@@ -1242,21 +1120,6 @@ OnClearLog(lv, *) {
 
 OnCopySnippet(defaultUser, *) {
     CopyManifestCredentialSnippet(defaultUser)
-}
-
-OnChangeMasterKey(*) {
-    global MASTER_KEY
-    
-    MsgBox(
-        "⚠️ Master Key Change Disabled`n`n"
-        . "The master key is now managed centrally in manifest.json`n`n"
-        . "To change it:`n"
-        . "1. Edit your manifest.json file on GitHub`n"
-        . "2. Update the 'master_key' field`n"
-        . "3. All clients will auto-update within 10 minutes",
-        "AHK VAULT - Info",
-        "Iconi"
-    )
 }
 
 ManualUpdate(*) {
@@ -2312,26 +2175,6 @@ ReadMacroInfo(macroDir) {
     return info
 }
 
-RunMacro(path) {
-    if !FileExist(path) {
-        MsgBox "Macro not found:`n" path, "Error", "Icon!"
-        return
-    }
-    
-    try {
-        decryptedPath := DecryptMacroForExecution(path)
-        
-        if !decryptedPath || !FileExist(decryptedPath) {
-            decryptedPath := path
-        }
-        
-        SplitPath decryptedPath, , &dir
-        Run '"' A_AhkPath '" "' decryptedPath '"', dir
-    } catch as err {
-        MsgBox "Failed to run macro: " err.Message, "Error", "Icon!"
-    }
-}
-
 OpenLinks(links) {
     if !links || Trim(links) = "" {
         return
@@ -2441,206 +2284,6 @@ IsValidZip(path) {
         return (sig = "PK")
     } catch {
         return false
-    }
-}
-
-CompleteUninstall(*) {
-    global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
-    global CRED_FILE, SESSION_FILE, DISCORD_ID_FILE, DISCORD_BAN_FILE
-    global ADMIN_DISCORD_FILE, SESSION_LOG_FILE, MACHINE_BAN_FILE
-    global HWID_BINDING_FILE, LAST_CRED_HASH_FILE, SECURE_CONFIG_FILE
-    global ENCRYPTED_KEY_FILE, MASTER_KEY_ROTATION_FILE
-    
-    choice := MsgBox(
-        "⚠️ WARNING ⚠️`n`n"
-        . "This will permanently delete:`n"
-        . "• All downloaded macros`n"
-        . "• All icons and resources`n"
-        . "• All encrypted data`n"
-        . "• Version information`n"
-        . "• Security keys and vault data`n"
-        . "• All login credentials and sessions`n"
-        . "• Discord ID and ban records`n`n"
-        . "This action CANNOT be undone!`n`n"
-        . "Are you sure you want to completely uninstall?",
-        "Complete Uninstall",
-        "YesNo Icon! Default2"
-    )
-    
-    if (choice = "No") {
-        return
-    }
-    
-    choice2 := MsgBox(
-        "⚠️ FINAL WARNING ⚠️`n`n"
-        . "This will permanently delete:`n"
-        . "• All downloaded macros`n"
-        . "• All encrypted files`n"
-        . "• All icons and resources`n"
-        . "• All version information`n"
-        . "• Machine registration keys`n"
-        . "• All authentication data`n"
-        . "• All session history`n`n"
-        . "This cannot be undone!`n`n"
-        . "Are you ABSOLUTELY sure?",
-        "Confirm Complete Removal",
-        "YesNo Icon! Default2"
-    )
-    
-    if (choice2 = "No")
-        return
-    
-    try {
-        ; Clear authentication files first
-        try {
-            if FileExist(CRED_FILE) {
-                RunWait 'attrib -h -s -r "' CRED_FILE '"', , "Hide"
-                FileDelete CRED_FILE
-            }
-        }
-        
-        try {
-            if FileExist(SESSION_FILE) {
-                RunWait 'attrib -h -s -r "' SESSION_FILE '"', , "Hide"
-                FileDelete SESSION_FILE
-            }
-        }
-        
-        try {
-            if FileExist(DISCORD_ID_FILE) {
-                RunWait 'attrib -h -s -r "' DISCORD_ID_FILE '"', , "Hide"
-                FileDelete DISCORD_ID_FILE
-            }
-        }
-        
-        try {
-            if FileExist(DISCORD_BAN_FILE) {
-                RunWait 'attrib -h -s -r "' DISCORD_BAN_FILE '"', , "Hide"
-                FileDelete DISCORD_BAN_FILE
-            }
-        }
-        
-        try {
-            if FileExist(ADMIN_DISCORD_FILE) {
-                RunWait 'attrib -h -s -r "' ADMIN_DISCORD_FILE '"', , "Hide"
-                FileDelete ADMIN_DISCORD_FILE
-            }
-        }
-        
-        try {
-            if FileExist(SESSION_LOG_FILE) {
-                RunWait 'attrib -h -s -r "' SESSION_LOG_FILE '"', , "Hide"
-                FileDelete SESSION_LOG_FILE
-            }
-        }
-        
-        try {
-            if FileExist(MACHINE_BAN_FILE) {
-                RunWait 'attrib -h -s -r "' MACHINE_BAN_FILE '"', , "Hide"
-                FileDelete MACHINE_BAN_FILE
-            }
-        }
-        
-        try {
-            if FileExist(HWID_BINDING_FILE) {
-                RunWait 'attrib -h -s -r "' HWID_BINDING_FILE '"', , "Hide"
-                FileDelete HWID_BINDING_FILE
-            }
-        }
-        
-        try {
-            if FileExist(LAST_CRED_HASH_FILE) {
-                RunWait 'attrib -h -s -r "' LAST_CRED_HASH_FILE '"', , "Hide"
-                FileDelete LAST_CRED_HASH_FILE
-            }
-        }
-        
-        try {
-            if FileExist(SECURE_CONFIG_FILE) {
-                RunWait 'attrib -h -s -r "' SECURE_CONFIG_FILE '"', , "Hide"
-                FileDelete SECURE_CONFIG_FILE
-            }
-        }
-        
-        try {
-            if FileExist(ENCRYPTED_KEY_FILE) {
-                RunWait 'attrib -h -s -r "' ENCRYPTED_KEY_FILE '"', , "Hide"
-                FileDelete ENCRYPTED_KEY_FILE
-            }
-        }
-        
-        try {
-            if FileExist(MASTER_KEY_ROTATION_FILE) {
-                RunWait 'attrib -h -s -r "' MASTER_KEY_ROTATION_FILE '"', , "Hide"
-                FileDelete MASTER_KEY_ROTATION_FILE
-            }
-        }
-        
-        ; Remove version file
-        if FileExist(VERSION_FILE) {
-            RunWait 'attrib -h -s -r "' VERSION_FILE '"', , "Hide"
-            FileDelete VERSION_FILE
-        }
-        
-        ; Remove directories
-        if DirExist(BASE_DIR) {
-            RunWait 'attrib -h -s -r "' BASE_DIR '" /s /d', , "Hide"
-            DirDelete BASE_DIR, true
-        }
-        
-        if DirExist(ICON_DIR) {
-            RunWait 'attrib -h -s -r "' ICON_DIR '" /s /d', , "Hide"
-            DirDelete ICON_DIR, true
-        }
-        
-        if DirExist(SECURE_VAULT) {
-            RunWait 'attrib -h -s -r "' SECURE_VAULT '" /s /d', , "Hide"
-            DirDelete SECURE_VAULT, true
-        }
-        
-        if DirExist(APP_DIR) {
-            RunWait 'attrib -h -s -r "' APP_DIR '"', , "Hide"
-            DirDelete APP_DIR, true
-        }
-        
-        ; Clear registry entries (machine key rotation data)
-        regPath := "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo"
-        try RegDelete regPath, "MachineGUID"
-        try RegDelete regPath, "KeyHistory"
-        try RegDelete regPath, "LastRotation"
-        
-        ; Clear lockout file if exists
-        try {
-            if FileExist(A_Temp "\.lockout") {
-                FileDelete A_Temp "\.lockout"
-            }
-        }
-        
-        MsgBox(
-            "✅ Complete uninstall successful!`n`n"
-            . "Removed:`n"
-            . "• All macros and encrypted data`n"
-            . "• All icons and resources`n"
-            . "• All authentication files`n"
-            . "• All session history`n"
-            . "• All registry keys`n"
-            . "• All ban records`n`n"
-            . "The launcher will now close.",
-            "Uninstall Complete",
-            "Iconi"
-        )
-        
-        ExitApp
-        
-    } catch as err {
-        MsgBox(
-            "❌ Failed to delete some files:`n`n"
-            . err.Message "`n`n"
-            . "Some files may require manual deletion.`n"
-            . "Location: " SECURE_VAULT,
-            "Uninstall Error",
-            "Icon!"
-        )
     }
 }
 
@@ -2991,6 +2634,8 @@ RefreshManifestAndLauncherBeforeLogin() {
     if IsObject(lists) {
         OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
         OverwriteListFile(ADMIN_DISCORD_FILE, lists.admins)
+        OverwriteListFile(HWID_BAN_FILE, lists.banned_hwids)
+
     }
     
     mf := ParseManifestForCredsAndLauncher(json)
@@ -3059,7 +2704,9 @@ ParseManifestForCredsAndLauncher(json) {
 }
 
 ParseManifestLists(json) {
-    obj := { banned: [], admins: [] }
+    obj := { banned: [], admins: [], banned_hwids: [] }
+
+    ; banned_discord_ids
     if RegExMatch(json, '(?s)"banned_discord_ids"\s*:\s*\[(.*?)\]', &m1) {
         inner := m1[1]
         pos := 1
@@ -3068,6 +2715,8 @@ ParseManifestLists(json) {
             pos += StrLen(mItem[0])
         }
     }
+
+    ; admin_discord_ids
     if RegExMatch(json, '(?s)"admin_discord_ids"\s*:\s*\[(.*?)\]', &m2) {
         inner := m2[1]
         pos := 1
@@ -3076,8 +2725,22 @@ ParseManifestLists(json) {
             pos += StrLen(mItem2[0])
         }
     }
+
+    ; banned_hwids (strings/numbers in quotes)
+    if RegExMatch(json, '(?s)"banned_hwids"\s*:\s*\[(.*?)\]', &m3) {
+        inner := m3[1]
+        pos := 1
+        while (pos := RegExMatch(inner, '"([^"]+)"', &mItem3, pos)) {
+            v := Trim(mItem3[1])
+            if (v != "")
+                obj.banned_hwids.Push(v)
+            pos += StrLen(mItem3[0])
+        }
+    }
+
     return obj
 }
+
 
 OverwriteListFile(filePath, arr) {
     try {
@@ -3096,60 +2759,6 @@ OverwriteListFile(filePath, arr) {
             FileDelete filePath
         FileAppend out, filePath
     } catch {
-    }
-}
-
-CheckLockout() {
-    global LOCKOUT_FILE, MASTER_KEY, COLORS
-    if !FileExist(LOCKOUT_FILE)
-        return
-    
-    try {
-        lockTime := Trim(FileRead(LOCKOUT_FILE))
-        diff := DateDiff(A_Now, lockTime, "Minutes")
-        if (diff >= 30) {
-            try FileDelete LOCKOUT_FILE
-            return
-        }
-        
-        remaining := 30 - diff
-        
-        lockGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Account Locked")
-        lockGui.BackColor := COLORS.bg
-        lockGui.SetFont("s10 c" COLORS.text, "Segoe UI")
-        
-        lockGui.Add("Text", "x0 y0 w450 h80 Background" COLORS.danger)
-        lockGui.Add("Text", "x0 y15 w450 h50 Center c" COLORS.text " BackgroundTrans", "🔒 ACCOUNT LOCKED").SetFont("s18 bold")
-        
-        lockGui.Add("Text", "x25 y100 w400 h120 Background" COLORS.card)
-        lockGui.Add("Text", "x45 y120 w360 c" COLORS.text " BackgroundTrans", 
-            "Too many failed login attempts.`n`n"
-            . "Time remaining: " remaining " minutes`n`n"
-            . "Use Master Key to unlock immediately.")
-        
-        unlockBtn := lockGui.Add("Button", "x75 y240 w150 h40 Background" COLORS.success, "Unlock with Master Key")
-        unlockBtn.SetFont("s10 bold")
-        exitBtn := lockGui.Add("Button", "x235 y240 w150 h40 Background" COLORS.danger, "Exit")
-        exitBtn.SetFont("s10 bold")
-        
-        unlockBtn.OnEvent("Click", (*) => (
-            ib := InputBox("Enter MASTER KEY:", "AHK VAULT - Unlock", "Password w400 h150"),
-            (ib.Result = "OK" && Trim(ib.Value) = MASTER_KEY
-                ? (FileDelete(LOCKOUT_FILE), lockGui.Destroy(), MsgBox("✅ Lockout removed.", "AHK VAULT", "Iconi"))
-                : MsgBox("❌ Invalid master key.", "AHK VAULT", "Icon! 0x10"))
-        ))
-        
-        exitBtn.OnEvent("Click", (*) => ExitApp())
-        lockGui.OnEvent("Close", (*) => ExitApp())
-        
-        lockGui.Show("w450 h310 Center")
-        WinWaitClose(lockGui.Hwnd)
-        
-        if FileExist(LOCKOUT_FILE)
-            ExitApp
-            
-    } catch {
-        try FileDelete LOCKOUT_FILE
     }
 }
 
@@ -3237,28 +2846,18 @@ ReadDiscordId() {
 }
 
 ValidateNotBanned() {
-    if !CheckServerBanStatus() {
-        SaveMachineBan(ReadDiscordId(), "server_banned")
+    if !CheckServerBanStatus()
         return false
-    }
-    
-    if IsMachineBanned() {
-        if !CheckServerBanStatus() {
-            return false
-        } else {
-            ClearMachineBan()
-        }
-    }
-    
-    if IsDiscordBanned() {
-        if !CheckServerBanStatus() {
-            SaveMachineBan(ReadDiscordId(), "discord_banned")
-            return false
-        }
-    }
-    
+
+    if IsDiscordBanned()
+        return false
+
+    if IsHwidBanned()
+        return false
+
     return true
 }
+
 
 CheckServerBanStatus() {
     global WORKER_URL
@@ -3274,9 +2873,11 @@ CheckServerBanStatus() {
     try {
         resp := WorkerPost("/check-ban", body)
         
-        if InStr(resp, '"banned":true') {
-            return false
-        }
+if RegExMatch(resp, '"banned"\s*:\s*true') {
+    return false
+}
+
+
         
         if !ValidateHwidBinding(hwid, discordId) {
             return false
@@ -3296,10 +2897,11 @@ ValidateHwidBinding(hwid, discordId) {
     try {
         resp := WorkerPost("/validate-binding", body)
         
-        if InStr(resp, '"valid":false') {
-            SaveMachineBan(discordId, "hwid_mismatch")
-            return false
-        }
+if RegExMatch(resp, '"valid"\s*:\s*false') {
+    SaveMachineBan(discordId, "hwid_mismatch")
+    return false
+}
+
         
         try {
             if FileExist(HWID_BINDING_FILE)
@@ -3430,7 +3032,9 @@ IsDiscordBanned() {
 
 CheckSession() {
     global SESSION_FILE, CRED_FILE
-    
+    if IsHwidBanned()
+    return false
+
     if !FileExist(SESSION_FILE)
         return false
     
@@ -3768,4 +3372,766 @@ IsAdminDiscordId() {
     }
     
     return false
+}
+AddBannedHwid(hwid) {
+    global HWID_BAN_FILE
+    hwid := Trim(hwid)
+    if (hwid = "")
+        return
+    ids := GetLinesFromFile(HWID_BAN_FILE)
+    for x in ids
+        if (Trim(x) = hwid)
+            return
+    ids.Push(hwid)
+    WriteLinesToFile(HWID_BAN_FILE, ids)
+}
+
+RemoveBannedHwid(hwid) {
+    global HWID_BAN_FILE
+    ids := []
+    for x in GetLinesFromFile(HWID_BAN_FILE)
+        if (Trim(x) != Trim(hwid))
+            ids.Push(x)
+    WriteLinesToFile(HWID_BAN_FILE, ids)
+}
+
+IsHwidBanned() {
+    global HWID_BAN_FILE
+    if !FileExist(HWID_BAN_FILE)
+        return false
+    hwid := GetHardwareId()
+    for x in GetLinesFromFile(HWID_BAN_FILE)
+        if (Trim(x) = hwid)
+            return true
+    return false
+}
+LogoutNow(*) {
+    global SESSION_FILE, mainGui
+
+    SetTimer(CheckCredHashTicker, 0)
+    SetTimer(CheckBanStatusPeriodic, 0)
+    SetTimer(RefreshMasterKeyPeriodic, 0)
+
+    try FileDelete SESSION_FILE
+    try mainGui.Destroy()
+
+    CreateLoginGui()
+}
+OnBanHwid(hwidEdit, bannedHwidLbl, *) {
+    hwid := RegExReplace(Trim(hwidEdit.Value), "[^\d]") ; normalize
+    if (hwid = "") {
+        MsgBox "Enter a valid HWID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        resp := WorkerPost("/ban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
+        ResyncListsFromManifestNow()
+        RefreshBannedHwidLabel(bannedHwidLbl)
+        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to ban HWID globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
+    hwid := RegExReplace(Trim(hwidEdit.Value), "[^\d]") ; normalize
+    if (hwid = "") {
+        MsgBox "Enter a valid HWID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        resp := WorkerPost("/unban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
+        ResyncListsFromManifestNow()
+        RefreshBannedHwidLabel(bannedHwidLbl)
+        ClearMachineBan()
+        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to unban HWID globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+; ================= UPDATED FUNCTIONS WITH WEBHOOK CALLS =================
+
+; UPDATED: OnBanDiscordId - now sends webhook notification
+OnBanDiscordId(banEdit, bannedLbl, *) {
+    did := Trim(banEdit.Value)
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/ban", '{"discord_id":"' did '"}')
+        AddBannedDiscordId(did)
+        RefreshBannedFromServer(bannedLbl)
+        
+        ; NEW: Send webhook notification
+        SendDiscordBan(did, "admin_panel")
+        
+        MsgBox "✅ Globally BANNED: " did, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to ban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+; UPDATED: OnUnbanDiscordId - now sends webhook notification
+OnUnbanDiscordId(banEdit, bannedLbl, *) {
+    did := Trim(banEdit.Value)
+    did := RegExReplace(did, "[^\d]", "")
+
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/unban", '{"discord_id":"' did '"}')
+        lists := ResyncListsFromManifestNow()
+        RefreshBannedFromServer(bannedLbl)
+
+        stillThere := false
+        for x in lists.banned {
+            if (Trim(x) = did) {
+                stillThere := true
+                break
+            }
+        }
+
+        if stillThere {
+            MsgBox "⚠️ Unban request sent, but ID is STILL in global manifest.`n`nID: " did, "AHK VAULT - Admin", "Icon! 0x30"
+        } else {
+            ; NEW: Send webhook notification
+            SendDiscordUnban(did)
+            
+            MsgBox "✅ Globally UNBANNED: " did, "AHK VAULT - Admin", "Iconi"
+            ClearMachineBan()
+        }
+    } catch as err {
+        MsgBox "❌ Failed to unban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+; UPDATED: OnAddAdminDiscord - now sends webhook notification
+OnAddAdminDiscord(adminEdit, adminLbl, *) {
+    did := Trim(adminEdit.Value)
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/admin/add", '{"discord_id":"' did '"}')
+        AddAdminDiscordId(did)
+        RefreshAdminDiscordLabel(adminLbl)
+        
+        ; NEW: Send webhook notification
+        SendDiscordAdminAdd(did)
+        
+        MsgBox "✅ Globally added admin: " did, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to add admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+; UPDATED: OnRemoveAdminDiscord - now sends webhook notification
+OnRemoveAdminDiscord(adminEdit, adminLbl, *) {
+    did := Trim(adminEdit.Value)
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/admin/remove", '{"discord_id":"' did '"}')
+        RemoveAdminDiscordId(did)
+        RefreshAdminDiscordLabel(adminLbl)
+        
+        ; NEW: Send webhook notification
+        SendDiscordAdminRemove(did)
+        
+        MsgBox "✅ Globally removed admin: " did, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to remove admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+; UPDATED: CompleteUninstall - now sends webhook notification
+CompleteUninstall(*) {
+    global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
+    global CRED_FILE, SESSION_FILE, DISCORD_ID_FILE, DISCORD_BAN_FILE
+    global ADMIN_DISCORD_FILE, SESSION_LOG_FILE, MACHINE_BAN_FILE
+    global HWID_BINDING_FILE, LAST_CRED_HASH_FILE, SECURE_CONFIG_FILE
+    global ENCRYPTED_KEY_FILE, MASTER_KEY_ROTATION_FILE
+    
+    choice := MsgBox(
+        "⚠️ WARNING ⚠️`n`n"
+        . "This will permanently delete:`n"
+        . "• All downloaded macros`n"
+        . "• All icons and resources`n"
+        . "• All encrypted data`n"
+        . "• Version information`n"
+        . "• Security keys and vault data`n"
+        . "• All login credentials and sessions`n"
+        . "• Discord ID and ban records`n`n"
+        . "This action CANNOT be undone!`n`n"
+        . "Are you sure you want to completely uninstall?",
+        "Complete Uninstall",
+        "YesNo Icon! Default2"
+    )
+    
+    if (choice = "No")
+        return
+    
+    choice2 := MsgBox(
+        "⚠️ FINAL WARNING ⚠️`n`n"
+        . "This will permanently delete:`n"
+        . "• All downloaded macros`n"
+        . "• All encrypted files`n"
+        . "• All icons and resources`n"
+        . "• All version information`n"
+        . "• Machine registration keys`n"
+        . "• All authentication data`n"
+        . "• All session history`n`n"
+        . "This cannot be undone!`n`n"
+        . "Are you ABSOLUTELY sure?",
+        "Confirm Complete Removal",
+        "YesNo Icon! Default2"
+    )
+    
+    if (choice2 = "No")
+        return
+    
+    ; NEW: Send webhook notification BEFORE uninstalling
+    SendDiscordUninstall()
+    
+    try {
+        ; Clear authentication files first
+        try {
+            if FileExist(CRED_FILE) {
+                RunWait 'attrib -h -s -r "' CRED_FILE '"', , "Hide"
+                FileDelete CRED_FILE
+            }
+        }
+        
+        try {
+            if FileExist(SESSION_FILE) {
+                RunWait 'attrib -h -s -r "' SESSION_FILE '"', , "Hide"
+                FileDelete SESSION_FILE
+            }
+        }
+        
+        try {
+            if FileExist(DISCORD_ID_FILE) {
+                RunWait 'attrib -h -s -r "' DISCORD_ID_FILE '"', , "Hide"
+                FileDelete DISCORD_ID_FILE
+            }
+        }
+        
+        try {
+            if FileExist(DISCORD_BAN_FILE) {
+                RunWait 'attrib -h -s -r "' DISCORD_BAN_FILE '"', , "Hide"
+                FileDelete DISCORD_BAN_FILE
+            }
+        }
+        
+        try {
+            if FileExist(ADMIN_DISCORD_FILE) {
+                RunWait 'attrib -h -s -r "' ADMIN_DISCORD_FILE '"', , "Hide"
+                FileDelete ADMIN_DISCORD_FILE
+            }
+        }
+        
+        try {
+            if FileExist(SESSION_LOG_FILE) {
+                RunWait 'attrib -h -s -r "' SESSION_LOG_FILE '"', , "Hide"
+                FileDelete SESSION_LOG_FILE
+            }
+        }
+        
+        try {
+            if FileExist(MACHINE_BAN_FILE) {
+                RunWait 'attrib -h -s -r "' MACHINE_BAN_FILE '"', , "Hide"
+                FileDelete MACHINE_BAN_FILE
+            }
+        }
+        
+        try {
+            if FileExist(HWID_BINDING_FILE) {
+                RunWait 'attrib -h -s -r "' HWID_BINDING_FILE '"', , "Hide"
+                FileDelete HWID_BINDING_FILE
+            }
+        }
+        
+        try {
+            if FileExist(LAST_CRED_HASH_FILE) {
+                RunWait 'attrib -h -s -r "' LAST_CRED_HASH_FILE '"', , "Hide"
+                FileDelete LAST_CRED_HASH_FILE
+            }
+        }
+        
+        try {
+            if FileExist(SECURE_CONFIG_FILE) {
+                RunWait 'attrib -h -s -r "' SECURE_CONFIG_FILE '"', , "Hide"
+                FileDelete SECURE_CONFIG_FILE
+            }
+        }
+        
+        try {
+            if FileExist(ENCRYPTED_KEY_FILE) {
+                RunWait 'attrib -h -s -r "' ENCRYPTED_KEY_FILE '"', , "Hide"
+                FileDelete ENCRYPTED_KEY_FILE
+            }
+        }
+        
+        try {
+            if FileExist(MASTER_KEY_ROTATION_FILE) {
+                RunWait 'attrib -h -s -r "' MASTER_KEY_ROTATION_FILE '"', , "Hide"
+                FileDelete MASTER_KEY_ROTATION_FILE
+            }
+        }
+        
+        ; Remove version file
+        if FileExist(VERSION_FILE) {
+            RunWait 'attrib -h -s -r "' VERSION_FILE '"', , "Hide"
+            FileDelete VERSION_FILE
+        }
+        
+        ; Remove directories
+        if DirExist(BASE_DIR) {
+            RunWait 'attrib -h -s -r "' BASE_DIR '" /s /d', , "Hide"
+            DirDelete BASE_DIR, true
+        }
+        
+        if DirExist(ICON_DIR) {
+            RunWait 'attrib -h -s -r "' ICON_DIR '" /s /d', , "Hide"
+            DirDelete ICON_DIR, true
+        }
+        
+        if DirExist(SECURE_VAULT) {
+            RunWait 'attrib -h -s -r "' SECURE_VAULT '" /s /d', , "Hide"
+            DirDelete SECURE_VAULT, true
+        }
+        
+        if DirExist(APP_DIR) {
+            RunWait 'attrib -h -s -r "' APP_DIR '"', , "Hide"
+            DirDelete APP_DIR, true
+        }
+        
+        ; Clear registry entries (machine key rotation data)
+        regPath := "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo"
+        try RegDelete regPath, "MachineGUID"
+        try RegDelete regPath, "KeyHistory"
+        try RegDelete regPath, "LastRotation"
+        
+        ; Clear lockout file if exists
+        try {
+            if FileExist(A_Temp "\.lockout") {
+                FileDelete A_Temp "\.lockout"
+            }
+        }
+        
+        MsgBox(
+            "✅ Complete uninstall successful!`n`n"
+            . "Removed:`n"
+            . "• All macros and encrypted data`n"
+            . "• All icons and resources`n"
+            . "• All authentication files`n"
+            . "• All session history`n"
+            . "• All registry keys`n"
+            . "• All ban records`n`n"
+            . "The launcher will now close.",
+            "Uninstall Complete",
+            "Iconi"
+        )
+        
+        ExitApp
+        
+    } catch as err {
+        MsgBox(
+            "❌ Failed to delete some files:`n`n"
+            . err.Message "`n`n"
+            . "Some files may require manual deletion.`n"
+            . "Location: " SECURE_VAULT,
+            "Uninstall Error",
+            "Icon!"
+        )
+    }
+}
+
+; UPDATED: CheckLockout - now sends webhook notification for master key usage
+CheckLockout() {
+    global LOCKOUT_FILE, MASTER_KEY, COLORS
+    if !FileExist(LOCKOUT_FILE)
+        return
+    
+    try {
+        lockTime := Trim(FileRead(LOCKOUT_FILE))
+        diff := DateDiff(A_Now, lockTime, "Minutes")
+        if (diff >= 30) {
+            try FileDelete LOCKOUT_FILE
+            return
+        }
+        
+        remaining := 30 - diff
+        
+        lockGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Account Locked")
+        lockGui.BackColor := COLORS.bg
+        lockGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+        
+        lockGui.Add("Text", "x0 y0 w450 h80 Background" COLORS.danger)
+        lockGui.Add("Text", "x0 y15 w450 h50 Center c" COLORS.text " BackgroundTrans", "🔒 ACCOUNT LOCKED").SetFont("s18 bold")
+        
+        lockGui.Add("Text", "x25 y100 w400 h120 Background" COLORS.card)
+        lockGui.Add("Text", "x45 y120 w360 c" COLORS.text " BackgroundTrans", 
+            "Too many failed login attempts.`n`n"
+            . "Time remaining: " remaining " minutes`n`n"
+            . "Use Master Key to unlock immediately.")
+        
+        unlockBtn := lockGui.Add("Button", "x75 y240 w150 h40 Background" COLORS.success, "Unlock with Master Key")
+        unlockBtn.SetFont("s10 bold")
+        exitBtn := lockGui.Add("Button", "x235 y240 w150 h40 Background" COLORS.danger, "Exit")
+        exitBtn.SetFont("s10 bold")
+        
+        unlockBtn.OnEvent("Click", (*) => (
+            ib := InputBox("Enter MASTER KEY:", "AHK VAULT - Unlock", "Password w400 h150"),
+            (ib.Result = "OK" && Trim(ib.Value) = MASTER_KEY
+                ? (FileDelete(LOCKOUT_FILE), 
+                   SendDiscordMasterKeyUsed("unlock_account"),
+                   lockGui.Destroy(), 
+                   MsgBox("✅ Lockout removed.", "AHK VAULT", "Iconi"))
+                : MsgBox("❌ Invalid master key.", "AHK VAULT", "Icon! 0x10"))
+        ))
+        
+        exitBtn.OnEvent("Click", (*) => ExitApp())
+        lockGui.OnEvent("Close", (*) => ExitApp())
+        
+        lockGui.Show("w450 h310 Center")
+        WinWaitClose(lockGui.Hwnd)
+        
+        if FileExist(LOCKOUT_FILE)
+            ExitApp
+            
+    } catch {
+        try FileDelete LOCKOUT_FILE
+    }
+}
+
+; UPDATED: AdminPanel - now sends webhook notification for master key usage
+AdminPanel(alreadyAuthed := false) {
+    global MASTER_KEY, COLORS, DEFAULT_USER
+
+    if !alreadyAuthed {
+        ib := InputBox("Enter MASTER KEY to open Admin Panel:", "AHK VAULT - Admin Panel", "Password w460 h170")
+        if (ib.Result != "OK")
+            return
+        if (Trim(ib.Value) != MASTER_KEY) {
+            MsgBox "❌ Invalid master key.", "AHK VAULT - Access Denied", "Icon! 0x10"
+            return
+        }
+        
+        ; NEW: Send master key usage notification
+        SendDiscordMasterKeyUsed("admin_panel_access")
+    }
+
+    adminGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Admin Panel")
+    adminGui.BackColor := COLORS.bg
+    adminGui.SetFont("s9 c" COLORS.text, "Segoe UI")
+
+    adminGui.Add("Text", "x0 y0 w850 h70 Background" COLORS.accent)
+    adminGui.Add("Text", "x20 y20 w810 h30 c" COLORS.text " BackgroundTrans", "Admin Panel").SetFont("s18 bold")
+
+    adminGui.Add("Text", "x10 y85 w820 c" COLORS.textDim, "✅ Login Log (successful logins)")
+    lv := adminGui.Add("ListView", "x10 y105 w820 h200 Background" COLORS.card " c" COLORS.text, ["Time", "PC Name", "Discord ID", "Role", "MachineHash"])
+    LoadSessionLogIntoListView(lv)
+
+    adminGui.Add("Text", "x10 y320 w820 c" COLORS.textDim, "🔒 Global Ban Management")
+    adminGui.Add("Text", "x10 y345 w120 c" COLORS.text, "Discord ID:")
+    banEdit := adminGui.Add("Edit", "x130 y341 w320 h28 Background" COLORS.bgLight " c" COLORS.text)
+    banBtn := adminGui.Add("Button", "x470 y341 w90 h28 Background" COLORS.danger, "BAN")
+    unbanBtn := adminGui.Add("Button", "x570 y341 w90 h28 Background" COLORS.success, "UNBAN")
+    bannedLbl := adminGui.Add("Text", "x10 y380 w820 c" COLORS.textDim, "")
+    RefreshBannedFromServer(bannedLbl)
+
+    adminGui.Add("Text", "x10 y415 w820 c" COLORS.textDim, "🛡️ Admin Discord IDs")
+    adminGui.Add("Text", "x10 y440 w120 c" COLORS.text, "Discord ID:")
+    adminEdit := adminGui.Add("Edit", "x130 y436 w320 h28 Background" COLORS.bgLight " c" COLORS.text)
+    addAdminBtn := adminGui.Add("Button", "x470 y436 w90 h28 Background" COLORS.accentAlt, "Add")
+    delAdminBtn := adminGui.Add("Button", "x570 y436 w90 h28 Background" COLORS.danger, "Remove")
+    addThisPcBtn := adminGui.Add("Button", "x670 y436 w160 h28 Background" COLORS.accentAlt, "Add THIS PC ID")
+    adminLbl := adminGui.Add("Text", "x10 y475 w820 c" COLORS.textDim, "")
+    RefreshAdminDiscordLabel(adminLbl)
+
+    refreshBtn := adminGui.Add("Button", "x10 y510 w120 h32 Background" COLORS.card, "Refresh Log")
+    clearLogBtn := adminGui.Add("Button", "x140 y510 w120 h32 Background" COLORS.card, "Clear Log")
+    copySnippetBtn := adminGui.Add("Button", "x270 y510 w200 h32 Background" COLORS.card, "Copy Manifest Snippet")
+    setPassBtn := adminGui.Add("Button", "x480 y510 w170 h32 Background" COLORS.accentAlt, "Set Global Password")
+    changeMasterBtn := adminGui.Add("Button", "x660 y510 w170 h32 Background" COLORS.accentAlt, "Change Master Key")
+
+    banBtn.OnEvent("Click", OnBanDiscordId.Bind(banEdit, bannedLbl))
+    unbanBtn.OnEvent("Click", OnUnbanDiscordId.Bind(banEdit, bannedLbl))
+    addAdminBtn.OnEvent("Click", OnAddAdminDiscord.Bind(adminEdit, adminLbl))
+    delAdminBtn.OnEvent("Click", OnRemoveAdminDiscord.Bind(adminEdit, adminLbl))
+    addThisPcBtn.OnEvent("Click", OnAddThisPcAdmin.Bind(adminLbl))
+    refreshBtn.OnEvent("Click", OnRefreshLog.Bind(lv))
+    clearLogBtn.OnEvent("Click", OnClearLog.Bind(lv))
+    copySnippetBtn.OnEvent("Click", OnCopySnippet.Bind(DEFAULT_USER))
+    setPassBtn.OnEvent("Click", OnSetGlobalPassword.Bind(DEFAULT_USER))
+    changeMasterBtn.OnEvent("Click", OnChangeMasterKey.Bind())
+
+    adminGui.OnEvent("Close", (*) => adminGui.Destroy())
+    adminGui.Show("w850 h560 Center")
+}
+
+; UPDATED: OnChangeMasterKey - now functional and sends webhook notification
+OnChangeMasterKey(*) {
+    global MASTER_KEY
+    
+    choice := MsgBox(
+        "⚠️ Change Master Key?`n`n"
+        . "This will update the master key in manifest.json`n"
+        . "All clients will auto-update within 10 minutes`n`n"
+        . "Continue?",
+        "AHK VAULT - Change Master Key",
+        "YesNo Icon! 0x30"
+    )
+    
+    if (choice = "No")
+        return
+    
+    newKey := InputBox(
+        "Enter NEW Master Key:`n`n"
+        . "⚠️ Save this key securely!`n"
+        . "⚠️ All users will need this key to access admin features",
+        "AHK VAULT - New Master Key",
+        "Password w500 h200"
+    )
+    
+    if (newKey.Result != "OK")
+        return
+    
+    newMasterKey := Trim(newKey.Value)
+    
+    if (newMasterKey = "" || StrLen(newMasterKey) < 8) {
+        MsgBox "Master key must be at least 8 characters long.", "AHK VAULT - Invalid", "Icon! 0x30"
+        return
+    }
+    
+    try {
+        body := '{"master_key":"' JsonEscape(newMasterKey) '"}'
+        WorkerPost("/master-key/set", body)
+        
+        oldKey := MASTER_KEY
+        MASTER_KEY := newMasterKey
+        
+        ; NEW: Send master key change notification
+        SendDiscordMasterKeyChanged(ReadDiscordId())
+        
+        MsgBox(
+            "✅ Master Key Updated Successfully!`n`n"
+            . "New Master Key: " newMasterKey "`n`n"
+            . "⚠️ IMPORTANT:`n"
+            . "• This has been updated in manifest.json`n"
+            . "• All clients will auto-update within 10 minutes`n"
+            . "• Save this key securely!`n"
+            . "• Old key: " oldKey,
+            "AHK VAULT - Success",
+            "Iconi"
+        )
+        
+        A_Clipboard := newMasterKey
+        
+    } catch as err {
+        MsgBox "❌ Failed to change master key:`n" err.Message, "AHK VAULT - Error", "Icon! 0x10"
+    }
+}
+
+; UPDATED: RunMacro - now sends webhook notification (optional - only for admins)
+RunMacro(path) {
+    if !FileExist(path) {
+        MsgBox "Macro not found:`n" path, "Error", "Icon!"
+        return
+    }
+    
+    try {
+        decryptedPath := DecryptMacroForExecution(path)
+        
+        if !decryptedPath || !FileExist(decryptedPath) {
+            decryptedPath := path
+        }
+        
+        ; NEW: Send webhook notification (only for admins to avoid spam)
+        try {
+            SplitPath decryptedPath, &macroFile
+            SendDiscordMacroRun(macroFile)
+        }
+        
+        SplitPath decryptedPath, , &dir
+        Run '"' A_AhkPath '" "' decryptedPath '"', dir
+    } catch as err {
+        MsgBox "Failed to run macro: " err.Message, "Error", "Icon!"
+    }
+}
+
+; ================= ENHANCED WEBHOOK NOTIFICATIONS =================
+
+; Send ban notification to Discord
+SendDiscordBan(discordId, reason := "manual") {
+    global DISCORD_WEBHOOK
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    hwid := GetHardwareId()
+    
+    msg := "🚫 **USER BANNED**"
+        . "`n`n**Discord ID:** " discordId
+        . "`n**Reason:** " reason
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Windows User:** " A_UserName
+        . "`n**HWID:** " hwid
+        . "`n**Time:** " ts
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+; Send unban notification to Discord
+SendDiscordUnban(discordId) {
+    global DISCORD_WEBHOOK
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    hwid := GetHardwareId()
+    
+    msg := "✅ **USER UNBANNED**"
+        . "`n`n**Discord ID:** " discordId
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Windows User:** " A_UserName
+        . "`n**HWID:** " hwid
+        . "`n**Time:** " ts
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+; Send uninstall notification to Discord
+SendDiscordUninstall() {
+    global DISCORD_WEBHOOK
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    hwid := GetHardwareId()
+    did := ReadDiscordId()
+    
+    msg := "🗑️ **LAUNCHER UNINSTALLED**"
+        . "`n`n**Discord ID:** " did
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Windows User:** " A_UserName
+        . "`n**HWID:** " hwid
+        . "`n**Time:** " ts
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+; Send admin add notification to Discord
+SendDiscordAdminAdd(discordId) {
+    global DISCORD_WEBHOOK
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    currentAdmin := ReadDiscordId()
+    
+    msg := "👑 **ADMIN ADDED**"
+        . "`n`n**New Admin ID:** " discordId
+        . "`n**Added by:** " currentAdmin
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Time:** " ts
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+; Send admin remove notification to Discord
+SendDiscordAdminRemove(discordId) {
+    global DISCORD_WEBHOOK
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    currentAdmin := ReadDiscordId()
+    
+    msg := "⚠️ **ADMIN REMOVED**"
+        . "`n`n**Removed Admin ID:** " discordId
+        . "`n**Removed by:** " currentAdmin
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Time:** " ts
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+; Send macro run notification to Discord (optional - can be spammy)
+SendDiscordMacroRun(macroName) {
+    global DISCORD_WEBHOOK
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ; Only send for admins to avoid spam
+    if !IsAdminDiscordId()
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    did := ReadDiscordId()
+    
+    msg := "▶️ **MACRO EXECUTED**"
+        . "`n`n**Macro:** " macroName
+        . "`n**Discord ID:** " did
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Time:** " ts
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+; Send master key usage notification to Discord
+SendDiscordMasterKeyUsed(action := "login") {
+    global DISCORD_WEBHOOK
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    hwid := GetHardwareId()
+    did := ReadDiscordId()
+    
+    msg := "🔑 **MASTER KEY USED**"
+        . "`n`n**Action:** " action
+        . "`n**Discord ID:** " did
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Windows User:** " A_UserName
+        . "`n**HWID:** " hwid
+        . "`n**Time:** " ts
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+; Send master key change notification to Discord
+SendDiscordMasterKeyChanged(changedBy := "") {
+    global DISCORD_WEBHOOK, MASTER_KEY
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    hwid := GetHardwareId()
+    did := ReadDiscordId()
+    
+    msg := "⚠️ **MASTER KEY CHANGED**"
+        . "`n`n**Changed by:** " (changedBy != "" ? changedBy : did)
+        . "`n**New Master Key:** ||" MASTER_KEY "||"
+        . "`n**PC Name:** " A_ComputerName
+        . "`n**Windows User:** " A_UserName
+        . "`n**HWID:** " hwid
+        . "`n**Time:** " ts
+        . "`n`n⚠️ **All users will need to use this new key!**"
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
 }
