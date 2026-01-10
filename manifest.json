@@ -12,5 +12,8 @@
   "admin_discord_ids": [
     "1234567890123456789"
   ],
-  "banned_hwids": []
+  "banned_hwids": [],
+  "hwid_bindings": {
+    "886398974456655892": "160377749"
+  }
 }
