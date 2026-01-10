@@ -1,5 +1,5 @@
 {
-  "version": "1.2.6",
+  "version": "1.0.0",
   "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
   "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
   "cred_user": "AHKvaultmacros@discord",
@@ -9,7 +9,6 @@
     "1247055057489231914"
   ],
   "changelog": [
-    "Added global bans",
-    "Fixed login"
+    "QoL Changed"
   ]
 }
