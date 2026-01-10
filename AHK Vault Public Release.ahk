@@ -50,7 +50,7 @@ global COLORS := {
     bgLight: "0x13171d",
     card: "0x161b22",
     cardHover: "0x1c2128",
-    accent: "0x238636",
+    accent: "0xd29922",
     accentHover: "0x2ea043",
     accentAlt: "0x1f6feb",
     text: "0xe6edf3",
@@ -68,23 +68,10 @@ global COLORS := {
 InitializeSecureVault()
 SetTaskbarIcon()
 
-; DEBUG: Check ban status
 did := ReadDiscordId()
 isBanned := IsDiscordBanned()
 isMachineBan := IsMachineBanned()
 serverBan := CheckServerBanStatus()
-
-MsgBox(
-    "Debug Info:`n`n"
-    . "Discord ID: " did "`n"
-    . "IsDiscordBanned: " isBanned "`n"
-    . "IsMachineBanned: " isMachineBan "`n"
-    . "ServerBanStatus: " serverBan "`n"
-    . "HWID: " GetHardwareId(),
-    "Debug",
-    "Iconi"
-)
-
 RefreshManifestAndLauncherBeforeLogin()
 NotifyStartupCredentials()
 CheckLockout()
@@ -3522,9 +3509,9 @@ CreateSession(loginUser := "", role := "user") {
 }
 
 StartSessionWatchdog() {
-    SetTimer(CheckCredHashTicker, 1000)
-    SetTimer(CheckBanStatusPeriodic, 1000)
-    SetTimer(RefreshMasterKeyPeriodic, 1000)
+    SetTimer(CheckCredHashTicker, 10000)
+    SetTimer(CheckBanStatusPeriodic, 10000)
+    SetTimer(RefreshMasterKeyPeriodic, 10000)
 }
 
 RefreshMasterKeyPeriodic() {
