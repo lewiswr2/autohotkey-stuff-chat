@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 
 ; ================= GLOBAL CONFIG =================
@@ -132,10 +132,12 @@ LoadSecureConfig() {
         if RegExMatch(decrypted, '"admin_pass"\s*:\s*"([^"]+)"', &m3)
             ADMIN_PASS := m3[1]
         
+        ; ✅ FIX: Always try to get webhook from manifest if missing
         if (DISCORD_WEBHOOK = "") {
             try {
                 DISCORD_WEBHOOK := GetWebhookFromManifest()
-                SaveSecureConfig()
+                if (DISCORD_WEBHOOK != "")
+                    SaveSecureConfig()
             } catch {
             }
         }
@@ -538,21 +540,19 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
         storedPassword := (parts.Length >= 3) ? Trim(parts[3]) : ""
         
         ; Check plain password FIRST (highest priority)
-        if (storedPassword != "") {
-            if (StrLower(username) = StrLower(storedUser) && password = storedPassword) {
-                attemptCount := 0
-                CreateSession(storedUser, "user")
-                SendDiscordLogin("user", storedUser)
-                StartSessionWatchdog()
-                DestroyLoginGui()
-                LaunchMainProgram()
-                return
-            }
+        if (storedPassword != "" && StrLower(username) = StrLower(storedUser) && password = storedPassword) {
+            attemptCount := 0
+            CreateSession(storedUser, "user")
+            SendDiscordLogin("user", storedUser)
+            StartSessionWatchdog()
+            DestroyLoginGui()
+            LaunchMainProgram()
+            return
         }
         
-        ; Fallback: check hash
+        ; Fallback: check hash - FIX: Remove the ""
         if (storedHash != "") {
-            enteredHash := "" HashPassword(password)
+            enteredHash := HashPassword(password)  ; ← FIXED: Removed ""
             if (StrLower(username) = StrLower(storedUser) && enteredHash = storedHash) {
                 attemptCount := 0
                 CreateSession(storedUser, "user")
@@ -822,27 +822,42 @@ CheckCredHashTicker() {
     if !FileExist(SESSION_FILE)
         return
     
-    if !RefreshManifestAndLauncherBeforeLogin()
-        return
+    ; Refresh manifest in background
+    RefreshManifestAndLauncherBeforeLogin()
     
-    if !CheckSession()
-        DoLogoutBecausePasswordChanged()
+    ; Don't force logout - just refresh data
+    ; Users can stay logged in even if password changes
 }
 
 ForceLogoutIfCredChanged() {
-    global SESSION_FILE
-    if !FileExist(SESSION_FILE)
-        return
-    
-    if !RefreshManifestAndLauncherBeforeLogin()
-        return
-    
-    if !CheckSession()
-        DoLogoutBecausePasswordChanged()
+    ; DISABLED - This was causing unwanted logouts
+    ; Users should only be logged out on:
+    ; 1. Session expiration (24 hours)
+    ; 2. Machine hash mismatch
+    ; 3. Manual logout
+    ; 4. Ban status change
+    return
 }
 
 IsMachineBanned() {
     return IsMachineBannedEnhanced()
+}
+
+ManualLogout() {
+    global SESSION_FILE, gLoginGui
+    
+    if FileExist(SESSION_FILE) {
+        try FileDelete SESSION_FILE
+    }
+    
+    try {
+        if IsObject(gLoginGui)
+            gLoginGui.Destroy()
+    } catch {
+    }
+    
+    MsgBox "✅ Logged out successfully.", "AHK VAULT", "Iconi"
+    CreateLoginGui()
 }
 
 IsMachineBannedEnhanced() {
@@ -1454,69 +1469,36 @@ CheckSession() {
     sessionTime := parts[1]
     sessionMachine := parts[2]
     
+    ; Check session expiration (24 hours)
     if (DateDiff(A_Now, sessionTime, "Hours") > 24)
         return false
     
+    ; Check machine hash
     if (sessionMachine != GetMachineHash())
         return false
     
+    ; Check ban status
     if IsDiscordBanned()
         return false
     
-    currentHash := ""
+    ; FIX: Only validate credentials exist, don't invalidate on change
     currentPassword := ""
     try {
         if FileExist(CRED_FILE) {
             cred := Trim(FileRead(CRED_FILE, "UTF-8"))
             credParts := StrSplit(cred, "|")
-            if (credParts.Length >= 2)
-                currentHash := Trim(credParts[2])
             if (credParts.Length >= 3)
                 currentPassword := Trim(credParts[3])
         }
     } catch {
-        currentHash := ""
-        currentPassword := ""
-    }
-    
-    if (currentHash = "" && currentPassword = "")
-        return false
-    
-    seenHash := ""
-    try {
-        if FileExist(LAST_SEEN_CRED_HASH_FILE)
-            seenHash := Trim(FileRead(LAST_SEEN_CRED_HASH_FILE, "UTF-8"))
-    } catch {
-        seenHash := ""
-    }
-    
-    if (seenHash = "") {
-        try {
-            if FileExist(LAST_SEEN_CRED_HASH_FILE)
-                FileDelete LAST_SEEN_CRED_HASH_FILE
-            FileAppend currentHash "|" currentPassword, LAST_SEEN_CRED_HASH_FILE
-            Run 'attrib +h "' LAST_SEEN_CRED_HASH_FILE '"', , "Hide"
-        } catch {
-        }
-        return true
-    }
-    
-    seenParts := StrSplit(seenHash, "|")
-    seenHashVal := (seenParts.Length >= 1) ? Trim(seenParts[1]) : ""
-    seenPassVal := (seenParts.Length >= 2) ? Trim(seenParts[2]) : ""
-    
-    if (seenHashVal != currentHash || seenPassVal != currentPassword) {
-        try FileDelete SESSION_FILE
-        try {
-            if FileExist(LAST_SEEN_CRED_HASH_FILE)
-                FileDelete LAST_SEEN_CRED_HASH_FILE
-            FileAppend currentHash "|" currentPassword, LAST_SEEN_CRED_HASH_FILE
-            Run 'attrib +h "' LAST_SEEN_CRED_HASH_FILE '"', , "Hide"
-        } catch {
-        }
         return false
     }
     
+    ; If no password exists in credential file, session is invalid
+    if (currentPassword = "")
+        return false
+    
+    ; Session is valid - no need to check if password changed
     return true
 }
 
@@ -1605,6 +1587,53 @@ DestroyLoginGui() {
     } catch {
     }
     gLoginGui := 0
+}
+
+DebugCredentials(*) {
+    global CRED_FILE, SESSION_FILE, LAST_SEEN_CRED_HASH_FILE
+    
+    msg := "=== CREDENTIAL DEBUG INFO ===`n`n"
+    
+    ; Check credential file
+    if FileExist(CRED_FILE) {
+        try {
+            credData := FileRead(CRED_FILE, "UTF-8")
+            parts := StrSplit(credData, "|")
+            msg .= "✅ Credential File Exists`n"
+            msg .= "User: " (parts.Length >= 1 ? parts[1] : "MISSING") "`n"
+            msg .= "Hash: " (parts.Length >= 2 ? SubStr(parts[2], 1, 20) "..." : "MISSING") "`n"
+            msg .= "Password: " (parts.Length >= 3 && parts[3] != "" ? "EXISTS (length: " StrLen(parts[3]) ")" : "MISSING") "`n`n"
+        } catch {
+            msg .= "❌ Cannot read credential file`n`n"
+        }
+    } else {
+        msg .= "❌ Credential file does not exist`n`n"
+    }
+    
+    ; Check session
+    if FileExist(SESSION_FILE) {
+        try {
+            sessionData := FileRead(SESSION_FILE, "UTF-8")
+            parts := StrSplit(sessionData, "|")
+            msg .= "✅ Session File Exists`n"
+            msg .= "Time: " (parts.Length >= 1 ? parts[1] : "MISSING") "`n"
+            msg .= "Machine: " (parts.Length >= 2 ? parts[2] : "MISSING") "`n"
+            msg .= "User: " (parts.Length >= 3 ? parts[3] : "MISSING") "`n"
+            msg .= "Role: " (parts.Length >= 4 ? parts[4] : "MISSING") "`n`n"
+        } catch {
+            msg .= "❌ Cannot read session file`n`n"
+        }
+    } else {
+        msg .= "❌ Session file does not exist`n`n"
+    }
+    
+    ; Check current machine hash
+    msg .= "Current Machine Hash: " GetMachineHash() "`n"
+    msg .= "Discord Banned: " (IsDiscordBanned() ? "YES ❌" : "NO ✅") "`n"
+    msg .= "Admin Status: " (IsAdminDiscordId() ? "YES ✅" : "NO") "`n"
+    
+    MsgBox msg, "AHK VAULT - Debug Info", "Iconi"
+    A_Clipboard := msg
 }
 
 AdminPanel(alreadyAuthed := false) {

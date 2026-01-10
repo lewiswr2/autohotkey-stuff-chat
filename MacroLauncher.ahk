@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 
 global LAUNCHER_VERSION := "2.0.5"
@@ -1590,5 +1590,3 @@ IsValidZip(path) {
         return false
     }
 }
-
-
