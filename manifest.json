@@ -1,7 +1,7 @@
 {
-  "version": "1.2.5",
+  "version": "1.2.6",
   "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
-  "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/refs/main/MacroLauncher.ahk",
+  "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
   "cred_user": "AHK vault@discord",
   "cred_hash": "203802849",
   "banned_discord_ids": [],
