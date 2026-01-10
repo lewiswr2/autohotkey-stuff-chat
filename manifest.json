@@ -5,6 +5,7 @@
   "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
   "webhook": "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_",
   "cred_user": "AHKvaultmacros@discord",
+  "cred_password": "test123",
   "cred_hash": "1105182512",
   "banned_discord_ids": [],
   "admin_discord_ids": [
