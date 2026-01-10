@@ -5,7 +5,9 @@
   "cred_user": "AHKvaultmacros@discord",
   "cred_hash": "1105182512",
   "banned_discord_ids": [],
-  "admin_discord_ids": [],
+  "admin_discord_ids": [
+    "1247055057489231914"
+  ],
   "changelog": [
     "Added global bans",
     "Fixed login"
