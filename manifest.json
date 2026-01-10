@@ -4,9 +4,7 @@
   "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
   "cred_user": "AHKvaultmacros@discord",
   "cred_hash": "1105182512",
-  "banned_discord_ids": [
-    "886398974456655892"
-  ],
+  "banned_discord_ids": [],
   "admin_discord_ids": [],
   "changelog": [
     "Added global bans",
