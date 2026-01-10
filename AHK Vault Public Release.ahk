@@ -2,7 +2,7 @@
 #SingleInstance Force
 #NoTrayIcon
 
-global LAUNCHER_VERSION := "2.1.0"
+global LAUNCHER_VERSION := "1.0.0"
 
 ; ================= AUTHENTICATION GLOBALS =================
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
