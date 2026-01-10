@@ -84,7 +84,6 @@ if CheckSession() {
         ExitApp
     }
     StartSessionWatchdog()
-    CheckForLauncherUpdate()
     CheckForUpdatesPrompt()
     CreateMainGui()
     return
@@ -1676,9 +1675,7 @@ ParseManifest(json) {
     manifest := {
         version: "",
         zip_url: "",
-        changelog: [],
-        launcher_version: "",
-        launcher_url: ""
+        changelog: []
     }
     
     try {
@@ -1688,14 +1685,6 @@ ParseManifest(json) {
         
         if RegExMatch(json, '"zip_url"\s*:\s*"([^"]+)"', &m) {
             manifest.zip_url := m[1]
-        }
-        
-        if RegExMatch(json, '"launcher_version"\s*:\s*"([^"]+)"', &m) {
-            manifest.launcher_version := m[1]
-        }
-        
-        if RegExMatch(json, '"launcher_url"\s*:\s*"([^"]+)"', &m) {
-            manifest.launcher_url := m[1]
         }
         
         pat := 's)"changelog"\s*:\s*\[(.*?)\]'
@@ -2391,93 +2380,6 @@ ShowChangelog(*) {
     }
     
     MsgBox "Version: " manifest.version "`n`n" text, "Changelog", "Iconi"
-}
-
-CheckForLauncherUpdate() {
-    global MANIFEST_URL, LAUNCHER_VERSION
-    
-    tmpManifest := A_Temp "\manifest.json"
-    
-    if !SafeDownload(MANIFEST_URL, tmpManifest) {
-        return
-    }
-    
-    json := ""
-    try {
-        json := FileRead(tmpManifest, "UTF-8")
-    } catch {
-        return
-    }
-    
-    manifest := ParseManifest(json)
-    if !manifest {
-        return
-    }
-    
-    if (!manifest.launcher_version || !manifest.launcher_url) {
-        return
-    }
-    
-    if VersionCompare(manifest.launcher_version, LAUNCHER_VERSION) <= 0 {
-        return
-    }
-    
-    DoSelfUpdate(manifest.launcher_url, manifest.launcher_version)
-}
-
-DoSelfUpdate(url, newVer) {
-    tmpNew := A_Temp "\launcher_new.ahk"
-    
-    if !SafeDownload(url, tmpNew, 30000) {
-        MsgBox "Download failed.`n`nCheck your internet connection.", "Error", "Icon!"
-        return
-    }
-    
-    try {
-        content := FileRead(tmpNew, "UTF-8")
-        
-        if (!InStr(content, "#Requires AutoHotkey")) {
-            MsgBox "Downloaded file doesn't appear to be a valid AHK script.", "Error", "Icon!"
-            try FileDelete tmpNew
-            return
-        }
-    } catch {
-        MsgBox "Failed to validate downloaded update.", "Error", "Icon!"
-        return
-    }
-    
-    me := A_ScriptFullPath
-    cmdPath := A_Temp "\update_launcher.cmd"
-    
-    cmd := (
-        '@echo off' "`r`n"
-        'chcp 65001>nul' "`r`n"
-        'echo Updating AHK vault Launcher...' "`r`n"
-        'timeout /t 2 /nobreak >nul' "`r`n"
-        'copy /y "' tmpNew '" "' me '" >nul' "`r`n"
-        'if errorlevel 1 (' "`r`n"
-        '    echo Update failed!' "`r`n"
-        '    pause' "`r`n"
-        '    goto :end' "`r`n"
-        ')' "`r`n"
-        'timeout /t 1 /nobreak >nul' "`r`n"
-        'start "" "' A_AhkPath '" "' me '"' "`r`n"
-        ':end' "`r`n"
-        'del /q "' tmpNew '" >nul 2>nul' "`r`n"
-        'del /q "%~f0" >nul 2>nul' "`r`n"
-    )
-    
-    try {
-        if FileExist(cmdPath) {
-            FileDelete cmdPath
-        }
-        FileAppend cmd, cmdPath, "UTF-8"
-        Run '"' cmdPath '"', , "Hide"
-        Sleep 500
-        ExitApp
-    } catch as err {
-        MsgBox "Update failed: " err.Message, "Error", "Icon!"
-    }
 }
 
 TryDirMove(src, dst, overwrite := true, retries := 10) {
@@ -3759,7 +3661,6 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
         SendDiscordLogin("master", MASTER_USER)
         StartSessionWatchdog()
         DestroyLoginGui()
-        CheckForLauncherUpdate()
         CheckForUpdatesPrompt()
         CreateMainGui()
         return
@@ -3772,7 +3673,6 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
         SendDiscordLogin("admin", username)
         StartSessionWatchdog()
         DestroyLoginGui()
-        CheckForLauncherUpdate()
         CheckForUpdatesPrompt()
         CreateMainGui()
         return
@@ -3803,7 +3703,6 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
             SendDiscordLogin("user", storedUser)
             StartSessionWatchdog()
             DestroyLoginGui()
-            CheckForLauncherUpdate()
             CheckForUpdatesPrompt()
             CreateMainGui()
             return
@@ -3818,7 +3717,6 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
                 SendDiscordLogin("user", storedUser)
                 StartSessionWatchdog()
                 DestroyLoginGui()
-                CheckForLauncherUpdate()
                 CheckForUpdatesPrompt()
                 CreateMainGui()
                 return
