@@ -1,20 +1,29 @@
 {
   "version": "1.0.0",
-  "zip_url": "https://github.com/yourusername/yourrepo/archive/refs/heads/main.zip",
-  "changelog": [
-    "Initial release",
-    "Security improvements"
-  ],
+  "launcher_version": "1.0.0",
+  "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
+  "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
+  "webhook": "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_",
   "cred_user": "AHKvaultmacros@discord",
-  "cred_hash": "1234567890",
-  "webhook": "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL",
+  "cred_hash": "1105182512",
   "banned_discord_ids": [],
   "admin_discord_ids": [
-    "1234567890123456789"
+    "1247055057489231914",
+    "886398974456655892"
   ],
-  "banned_hwids": [],
+  "banned_hwids": [
+    "1111"
+  ],
   "hwid_bindings": {
-    "886398974456655892": "160377749",
-    "1247055057489231914": "1525703921"
-  }
+    "1247055057489231914": "1525703921",
+    "886398974456655892": "160377749"
+  },
+  "changelog": [
+    "🔒 SECURITY UPDATE - Master key now generated locally (removed from manifest)",
+    "🔒 Admin panel requires BOTH master key AND admin Discord ID",
+    "🔒 Removed plaintext password - hash only",
+    "🔒 Added rate limiting: 3 attempts, 30-min lockout",
+    "🔒 Security event logging with Discord notifications",
+    "✨ QoL improvements"
+  ]
 }
