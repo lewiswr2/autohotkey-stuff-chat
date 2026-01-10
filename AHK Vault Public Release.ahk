@@ -2469,20 +2469,26 @@ NotifyStartupCredentials() {
     if (DISCORD_WEBHOOK = "")
         return
     
-    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
-    hwid := GetHardwareId()
-    did := ReadDiscordId()
-    
-    msg := "📋 AHK VAULT - CURRENT CREDENTIALS"
-        . "`n`n**Master Key:** ||" MASTER_KEY "||"
-        . "`n**Admin Password:** ||" ADMIN_PASS "||"
-        . "`n**Time:** " ts
-        . "`n**PC:** " A_ComputerName
-        . "`n**User:** " A_UserName
-        . "`n**Discord ID:** " did
-        . "`n**HWID:** " hwid
-    
-    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+    ; Send full credentials only if admin
+    if IsAdminDiscordId() {
+        ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+        hwid := GetHardwareId()
+        did := ReadDiscordId()
+        
+        msg := "📋 AHK VAULT - CURRENT CREDENTIALS (Admin Login)"
+            . "`n`n**Master Key:** ||" MASTER_KEY "||"
+            . "`n**Admin Password:** ||" ADMIN_PASS "||"
+            . "`n**Time:** " ts
+            . "`n**PC:** " A_ComputerName
+            . "`n**User:** " A_UserName
+            . "`n**Discord ID:** " did
+            . "`n**HWID:** " hwid
+        
+        DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+    } else {
+        ; Send basic notification for non-admins
+        NotifyNonAdminStartup()
+    }
 }
 
 NotifyInitialSetup() {
@@ -2491,11 +2497,15 @@ NotifyInitialSetup() {
     if (DISCORD_WEBHOOK = "")
         return
     
+    ; Only send credentials if current user is an admin
+    if !IsAdminDiscordId()
+        return
+    
     ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
     hwid := GetHardwareId()
     did := ReadDiscordId()
     
-    msg := "🎉 AHK VAULT - INITIAL SETUP"
+    msg := "🎉 AHK VAULT - INITIAL SETUP (Admin)"
         . "`n`n**Master Key:** ||" MASTER_KEY "||"
         . "`n**Admin Password:** ||" ADMIN_PASS "||"
         . "`n**Time:** " ts
@@ -2504,6 +2514,26 @@ NotifyInitialSetup() {
         . "`n**Discord ID:** " did
         . "`n**HWID:** " hwid
         . "`n`n⚠️ **Save these credentials securely!**"
+    
+    DiscordWebhookPost(DISCORD_WEBHOOK, msg)
+}
+
+NotifyNonAdminStartup() {
+    global DISCORD_WEBHOOK
+    
+    if (DISCORD_WEBHOOK = "")
+        return
+    
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    hwid := GetHardwareId()
+    did := ReadDiscordId()
+    
+    msg := "👤 AHK VAULT - User Startup (Non-Admin)"
+        . "`n`n**Time:** " ts
+        . "`n**PC:** " A_ComputerName
+        . "`n**User:** " A_UserName
+        . "`n**Discord ID:** " did
+        . "`n**HWID:** " hwid
     
     DiscordWebhookPost(DISCORD_WEBHOOK, msg)
 }
