@@ -1,31 +1,3 @@
 {
-  "logs": [
-    {
-      "t": "2026-01-10 17:41:32",
-      "pc": "YUP",
-      "user": "edwar",
-      "discordId": "886398974456655892",
-      "hwid": "160377749",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-10 22:18:55",
-      "pc": "DUMMY-PC",
-      "user": "DUMMY",
-      "discordId": "1247055057489231914",
-      "hwid": "1525703921",
-      "role": "user",
-      "loginUser": "dummy"
-    },
-    {
-      "t": "2026-01-10 22:29:27",
-      "pc": "DUMMY-PC",
-      "user": "DUMMY",
-      "discordId": "1247055057489231914",
-      "hwid": "1525703921",
-      "role": "user",
-      "loginUser": "dummy"
-    }
-  ]
+  "logs": []
 }
