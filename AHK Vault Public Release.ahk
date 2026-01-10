@@ -2,7 +2,7 @@
 #SingleInstance Force
 #NoTrayIcon
 
-global LAUNCHER_VERSION := "2.1.0"
+global LAUNCHER_VERSION := "1.0.0"
 
 ; ================= AUTHENTICATION GLOBALS =================
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
@@ -41,7 +41,7 @@ global SECURE_VAULT := APP_DIR "\{" CreateGUID() "}"
 global BASE_DIR := SECURE_VAULT "\data"
 global VERSION_FILE := SECURE_VAULT "\ver"
 global ICON_DIR := SECURE_VAULT "\res"
-global MANIFEST_URL := "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/manifest.json"
+global MANIFEST_URL := DecryptManifestUrl()
 global mainGui := 0
 global MACHINE_KEY := ""
 
@@ -1242,39 +1242,17 @@ OnCopySnippet(defaultUser, *) {
 
 OnChangeMasterKey(*) {
     global MASTER_KEY
-
-    ib := InputBox("Enter CURRENT Master Key to change it:", "AHK VAULT - Change Master Key", "Password w520 h180")
-    if (ib.Result != "OK")
-        return
-    if (Trim(ib.Value) != MASTER_KEY) {
-        MsgBox "❌ Current master key incorrect.", "AHK VAULT - Denied", "Icon! 0x10"
-        return
-    }
-
-    nb := InputBox("Enter NEW Master Key:", "AHK VAULT - New Master Key", "Password w520 h180")
-    if (nb.Result != "OK")
-        return
-    newKey := Trim(nb.Value)
-    if (newKey = "") {
-        MsgBox "Master key cannot be blank.", "AHK VAULT - Invalid", "Icon! 0x30"
-        return
-    }
-
-    cb := InputBox("Confirm NEW Master Key:", "AHK VAULT - Confirm Master Key", "Password w520 h180")
-    if (cb.Result != "OK")
-        return
-    if (Trim(cb.Value) != newKey) {
-        MsgBox "❌ Keys do not match.", "AHK VAULT - Invalid", "Icon! 0x30"
-        return
-    }
-
-    if SaveAuthConfig() {
-        MASTER_KEY := newKey
-        SaveAuthConfig()
-        MsgBox "✅ Master key updated and saved on this PC.", "AHK VAULT - Success", "Iconi"
-    } else {
-        MsgBox "❌ Failed to save master key.", "AHK VAULT - Error", "Icon! 0x10"
-    }
+    
+    MsgBox(
+        "⚠️ Master Key Change Disabled`n`n"
+        . "The master key is now managed centrally in manifest.json`n`n"
+        . "To change it:`n"
+        . "1. Edit your manifest.json file on GitHub`n"
+        . "2. Update the 'master_key' field`n"
+        . "3. All clients will auto-update within 10 minutes",
+        "AHK VAULT - Info",
+        "Iconi"
+    )
 }
 
 ManualUpdate(*) {
@@ -1611,6 +1589,23 @@ ManualUpdate(*) {
         mainGui.Destroy()
         CreateMainGui()
     }
+}
+
+DecryptManifestUrl() {
+    ; Encrypted manifest URL (obfuscated)
+    encrypted := "68747470733A2F2F7261772E67697468756275736572636F6E74656E742E636F6D2F6C6577697377723"
+               . "22F6175746F686F746B65792D73747566662D636861742F6D61696E2F6D616E69666573742E6A736F6E"
+    
+    ; Decrypt hex to URL
+    url := ""
+    pos := 1
+    while (pos <= StrLen(encrypted)) {
+        hex := SubStr(encrypted, pos, 2)
+        url .= Chr("0x" hex)
+        pos += 2
+    }
+    
+    return url
 }
 
 SafeDownload(url, out, timeoutMs := 10000) {
@@ -2747,6 +2742,9 @@ CompleteUninstall(*) {
 LoadSecureConfig() {
     global SECURE_CONFIG_FILE, MASTER_KEY, DISCORD_WEBHOOK, ADMIN_PASS
     
+    ; Always fetch master key from manifest
+    FetchMasterKeyFromManifest()
+    
     if !FileExist(SECURE_CONFIG_FILE) {
         InitializeAuthConfig()
         return
@@ -2756,8 +2754,7 @@ LoadSecureConfig() {
         encrypted := FileRead(SECURE_CONFIG_FILE, "UTF-8")
         decrypted := DecryptConfig(encrypted)
         
-        if RegExMatch(decrypted, '"master_key"\s*:\s*"([^"]+)"', &m1)
-            MASTER_KEY := m1[1]
+        ; Don't load master key from file - always use manifest value
         if RegExMatch(decrypted, '"webhook"\s*:\s*"([^"]+)"', &m2)
             DISCORD_WEBHOOK := m2[1]
         if RegExMatch(decrypted, '"admin_pass"\s*:\s*"([^"]+)"', &m3)
@@ -2780,19 +2777,40 @@ LoadSecureConfig() {
     }
 }
 
-InitializeAuthConfig() {
-    global MASTER_KEY, DISCORD_WEBHOOK, ADMIN_PASS, SECURE_CONFIG_FILE
-    
-    MASTER_KEY := GenerateRandomKey(32)
-    ADMIN_PASS := GenerateRandomKey(16)
+FetchMasterKeyFromManifest() {
+    global MASTER_KEY, MANIFEST_URL
     
     try {
-        resp := WorkerPost("/config/get", "{}")
-        if RegExMatch(resp, '"webhook"\s*:\s*"([^"]+)"', &m)
-            DISCORD_WEBHOOK := m[1]
+        tmp := A_Temp "\manifest_config.json"
+        if SafeDownload(MANIFEST_URL, tmp, 20000) {
+            json := FileRead(tmp, "UTF-8")
+            if RegExMatch(json, '"master_key"\s*:\s*"([^"]+)"', &m) {
+                MASTER_KEY := m[1]
+                return true
+            }
+        }
     } catch {
     }
     
+    ; If we can't fetch, generate temporary one (will fail auth but won't crash)
+    if (MASTER_KEY = "") {
+        MASTER_KEY := GenerateRandomKey(32)
+        return false
+    }
+    
+    return false
+}
+
+InitializeAuthConfig() {
+    global MASTER_KEY, DISCORD_WEBHOOK, ADMIN_PASS, SECURE_CONFIG_FILE
+    
+    ; Fetch master key from manifest
+    if (MASTER_KEY = "")
+        FetchMasterKeyFromManifest()
+    
+    ADMIN_PASS := GenerateRandomKey(16)
+    
+    ; Get webhook from manifest
     if (DISCORD_WEBHOOK = "") {
         try {
             DISCORD_WEBHOOK := GetWebhookFromManifest()
@@ -2809,8 +2827,8 @@ SaveAuthConfig() {
     global SECURE_CONFIG_FILE, MASTER_KEY, DISCORD_WEBHOOK, ADMIN_PASS
     
     try {
-        json := '{"master_key":"' JsonEscape(MASTER_KEY) '",'
-             . '"webhook":"' JsonEscape(DISCORD_WEBHOOK) '",'
+        ; Only save webhook and admin_pass, not master_key
+        json := '{"webhook":"' JsonEscape(DISCORD_WEBHOOK) '",'
              . '"admin_pass":"' JsonEscape(ADMIN_PASS) '"}'
         
         encrypted := EncryptConfig(json)
@@ -3048,6 +3066,9 @@ GetWebhookFromManifest() {
 RefreshManifestAndLauncherBeforeLogin() {
     global MANIFEST_URL, CRED_FILE, SESSION_FILE, LAST_CRED_HASH_FILE
     global DISCORD_BAN_FILE, ADMIN_DISCORD_FILE, DISCORD_WEBHOOK
+    
+    ; Fetch master key from manifest
+    FetchMasterKeyFromManifest()
     
     tmp := A_Temp "\manifest.json"
     if !SafeDownload(MANIFEST_URL, tmp, 30000)
@@ -3581,8 +3602,13 @@ CreateSession(loginUser := "", role := "user") {
 }
 
 StartSessionWatchdog() {
-    SetTimer(CheckCredHashTicker, 60000)
-    SetTimer(CheckBanStatusPeriodic, 300000)
+    SetTimer(CheckCredHashTicker, 1000)
+    SetTimer(CheckBanStatusPeriodic, 1000)
+    SetTimer(RefreshMasterKeyPeriodic, 1000)
+}
+
+RefreshMasterKeyPeriodic() {
+    FetchMasterKeyFromManifest()
 }
 
 CheckCredHashTicker() {
