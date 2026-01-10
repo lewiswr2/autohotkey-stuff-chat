@@ -67,6 +67,24 @@ global COLORS := {
 ; =========================================
 InitializeSecureVault()
 SetTaskbarIcon()
+
+; DEBUG: Check ban status
+did := ReadDiscordId()
+isBanned := IsDiscordBanned()
+isMachineBan := IsMachineBanned()
+serverBan := CheckServerBanStatus()
+
+MsgBox(
+    "Debug Info:`n`n"
+    . "Discord ID: " did "`n"
+    . "IsDiscordBanned: " isBanned "`n"
+    . "IsMachineBanned: " isMachineBan "`n"
+    . "ServerBanStatus: " serverBan "`n"
+    . "HWID: " GetHardwareId(),
+    "Debug",
+    "Iconi"
+)
+
 RefreshManifestAndLauncherBeforeLogin()
 NotifyStartupCredentials()
 CheckLockout()
