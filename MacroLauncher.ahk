@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #SingleInstance Force
 
 global LAUNCHER_VERSION := "2.0.4"
@@ -16,7 +16,7 @@ global COLORS := {
     bgLight: "0x13171d",
     card: "0x161b22",
     cardHover: "0x1c2128",
-    accent: "0x2d2386",
+    accent: "0x238636",
     accentHover: "0x2ea043",
     accentAlt: "0x1f6feb",
     text: "0xe6edf3",
@@ -55,7 +55,7 @@ EnsureVersionFile() {
 
 SetTaskbarIcon() {
     global ICON_DIR
-    iconPath := ICON_DIR "\AHK.png"
+    iconPath := ICON_DIR "\launcher.png"
     
     try {
         if FileExist(iconPath) {
@@ -1615,5 +1615,3 @@ IsValidZip(path) {
         return false
     }
 }
-
-
