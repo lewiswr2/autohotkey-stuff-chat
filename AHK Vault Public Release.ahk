@@ -2,7 +2,7 @@
 #SingleInstance Force
 #NoTrayIcon
 
-global LAUNCHER_VERSION := "1.0.0"
+global LAUNCHER_VERSION := "2.1.0"
 
 ; ================= AUTHENTICATION GLOBALS =================
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
@@ -61,8 +61,10 @@ global COLORS := {
     danger: "0xda3633"
 }
 
+#HotIf
+^!p:: AdminPanel()
+#HotIf
 ; =========================================
-
 InitializeSecureVault()
 SetTaskbarIcon()
 RefreshManifestAndLauncherBeforeLogin()
@@ -91,8 +93,43 @@ if CheckSession() {
 CreateLoginGui()
 return
 
-; ============= SECURITY FUNCTIONS =============
+; ================= UTILITY FUNCTIONS =================
 
+GetLinesFromFile(path) {
+    arr := []
+    if !FileExist(path)
+        return arr
+    try {
+        txt := FileRead(path, "UTF-8")
+        for line in StrSplit(txt, "`n", "`r") {
+            line := Trim(line)
+            if (line != "")
+                arr.Push(line)
+        }
+    } catch {
+    }
+    return arr
+}
+
+WriteLinesToFile(path, arr) {
+    out := ""
+    for x in arr
+        out .= Trim(x) "`n"
+    try {
+        if FileExist(path)
+            FileDelete path
+        if (Trim(out) != "")
+            FileAppend out, path
+    } catch {
+    }
+}
+
+NoCacheUrl(url) {
+    sep := InStr(url, "?") ? "&" : "?"
+    return url sep "t=" A_TickCount
+}
+
+; ============= SECURITY FUNCTIONS =============
 InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
     global CRED_FILE, SESSION_FILE, DISCORD_ID_FILE, DISCORD_BAN_FILE
@@ -483,7 +520,99 @@ SecureFileRead(path) {
         return ""
     }
 }
+; ================= BAN MANAGEMENT =================
 
+AddBannedDiscordId(did) {
+    global DISCORD_BAN_FILE
+    did := StrLower(Trim(did))
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$"))
+        return
+    ids := GetLinesFromFile(DISCORD_BAN_FILE)
+    for x in ids
+        if (StrLower(Trim(x)) = did)
+            return
+    ids.Push(did)
+    WriteLinesToFile(DISCORD_BAN_FILE, ids)
+}
+
+RemoveBannedDiscordId(did) {
+    global DISCORD_BAN_FILE
+    did := StrLower(Trim(did))
+    if (did = "")
+        return
+    ids := []
+    for x in GetLinesFromFile(DISCORD_BAN_FILE) {
+        if (StrLower(Trim(x)) != did)
+            ids.Push(x)
+    }
+    WriteLinesToFile(DISCORD_BAN_FILE, ids)
+}
+
+RefreshBannedDiscordLabel(lblCtrl) {
+    global DISCORD_BAN_FILE
+    ids := GetLinesFromFile(DISCORD_BAN_FILE)
+    if (ids.Length = 0) {
+        lblCtrl.Value := "Banned Discord IDs: (none)"
+        return
+    }
+    s := "Banned Discord IDs: "
+    for id in ids
+        s .= id ", "
+    lblCtrl.Value := RTrim(s, ", ")
+}
+
+RefreshBannedFromServer(lblCtrl) {
+    global MANIFEST_URL, DISCORD_BAN_FILE
+
+    tmp := A_Temp "\manifest_live.json"
+    if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmp, 20000) {
+        lblCtrl.Value := "Banned Discord IDs: (sync failed)"
+        return false
+    }
+
+    try json := FileRead(tmp, "UTF-8")
+    catch {
+        lblCtrl.Value := "Banned Discord IDs: (sync failed)"
+        return false
+    }
+
+    lists := ParseManifestLists(json)
+    if !IsObject(lists) {
+        lblCtrl.Value := "Banned Discord IDs: (sync failed)"
+        return false
+    }
+
+    OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
+
+    if (lists.banned.Length = 0) {
+        lblCtrl.Value := "Banned Discord IDs: (none)"
+        return true
+    }
+
+    s := "Banned Discord IDs: "
+    for id in lists.banned
+        s .= id ", "
+    lblCtrl.Value := RTrim(s, ", ")
+    return true
+}
+
+ResyncListsFromManifestNow() {
+    global MANIFEST_URL, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
+    tmp := A_Temp "\manifest_live.json"
+
+    if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmp, 20000)
+        throw Error("Failed to download manifest from server.")
+
+    json := FileRead(tmp, "UTF-8")
+    lists := ParseManifestLists(json)
+
+    if !IsObject(lists)
+        throw Error("Failed to parse manifest lists.")
+
+    OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
+    OverwriteListFile(ADMIN_DISCORD_FILE, lists.admins)
+    return lists
+}
 EncryptMacroFile(path) {
     if !FileExist(path)
         return false
@@ -600,6 +729,12 @@ SetTaskbarIcon() {
         }
     } catch {
     }
+}
+
+SetupTray() {
+    A_TrayMenu.Delete()
+    A_TrayMenu.Add("Open Admin Panel (Ctrl+Alt+P)", (*) => AdminPanel())
+    A_TrayMenu.Add("Exit", (*) => ExitApp())
 }
 
 CheckForUpdatesPrompt() {
@@ -808,6 +943,338 @@ HasAnyFolders(dir) {
             return true
     }
     return false
+}
+
+; ================= ADMIN MANAGEMENT =================
+
+AddAdminDiscordId(did) {
+    global ADMIN_DISCORD_FILE
+    did := StrLower(Trim(did))
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$"))
+        return
+    ids := GetLinesFromFile(ADMIN_DISCORD_FILE)
+    for x in ids
+        if (StrLower(Trim(x)) = did)
+            return
+    ids.Push(did)
+    WriteLinesToFile(ADMIN_DISCORD_FILE, ids)
+}
+
+RemoveAdminDiscordId(did) {
+    global ADMIN_DISCORD_FILE
+    did := StrLower(Trim(did))
+    if (did = "")
+        return
+    ids := []
+    for x in GetLinesFromFile(ADMIN_DISCORD_FILE) {
+        if (StrLower(Trim(x)) != did)
+            ids.Push(x)
+    }
+    WriteLinesToFile(ADMIN_DISCORD_FILE, ids)
+}
+
+RefreshAdminDiscordLabel(lblCtrl) {
+    global ADMIN_DISCORD_FILE
+    ids := GetLinesFromFile(ADMIN_DISCORD_FILE)
+    if (ids.Length = 0) {
+        lblCtrl.Value := "Admin Discord IDs: (none)   (ADMIN_PASS required)"
+        return
+    }
+    s := "Admin Discord IDs: "
+    for id in ids
+        s .= id ", "
+    lblCtrl.Value := RTrim(s, ", ") "   (ADMIN_PASS required)"
+}
+
+; ================= SESSION LOG =================
+
+LoadSessionLogIntoListView(lv) {
+    global SESSION_LOG_FILE
+    if !FileExist(SESSION_LOG_FILE)
+        return
+
+    try {
+        txt := FileRead(SESSION_LOG_FILE, "UTF-8")
+        for line in StrSplit(txt, "`n", "`r") {
+            line := Trim(line)
+            if (line = "")
+                continue
+            parts := StrSplit(line, "|")
+            t := (parts.Length >= 1) ? parts[1] : ""
+            pc := (parts.Length >= 2) ? parts[2] : ""
+            did := (parts.Length >= 3) ? parts[3] : ""
+            role := (parts.Length >= 4) ? parts[4] : ""
+            hash := (parts.Length >= 5) ? parts[5] : ""
+            lv.Add("", t, pc, did, role, hash)
+        }
+    } catch {
+    }
+}
+
+CopyManifestCredentialSnippet(username) {
+    pw := InputBox(
+        "Enter the NEW universal password.`n`nThis will copy cred_user + cred_hash for manifest.json.",
+        "AHK VAULT - Generate manifest snippet",
+        "Password w560 h190"
+    )
+    if (pw.Result != "OK")
+        return
+
+    newPass := Trim(pw.Value)
+    if (newPass = "") {
+        MsgBox "Password cannot be blank.", "AHK VAULT - Invalid", "Icon! 0x30"
+        return
+    }
+
+    h := HashPassword(newPass)
+    snippet := '"cred_user": "' username '",' "`n" '"cred_hash": "' h '"'
+    A_Clipboard := snippet
+
+    MsgBox "✅ Copied to clipboard.`n`nPaste into manifest.json:`n`n" snippet, "AHK VAULT", "Iconi"
+}
+
+; ================= ADMIN PANEL GUI =================
+
+AdminPanel(alreadyAuthed := false) {
+    global MASTER_KEY, COLORS, DEFAULT_USER
+
+    if !alreadyAuthed {
+        ib := InputBox("Enter MASTER KEY to open Admin Panel:", "AHK VAULT - Admin Panel", "Password w460 h170")
+        if (ib.Result != "OK")
+            return
+        if (Trim(ib.Value) != MASTER_KEY) {
+            MsgBox "❌ Invalid master key.", "AHK VAULT - Access Denied", "Icon! 0x10"
+            return
+        }
+    }
+
+    adminGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Admin Panel")
+    adminGui.BackColor := COLORS.bg
+    adminGui.SetFont("s9 c" COLORS.text, "Segoe UI")
+
+    adminGui.Add("Text", "x0 y0 w850 h70 Background" COLORS.accent)
+    adminGui.Add("Text", "x20 y20 w810 h30 c" COLORS.text " BackgroundTrans", "Admin Panel").SetFont("s18 bold")
+
+    adminGui.Add("Text", "x10 y85 w820 c" COLORS.textDim, "✅ Login Log (successful logins)")
+    lv := adminGui.Add("ListView", "x10 y105 w820 h200 Background" COLORS.card " c" COLORS.text, ["Time", "PC Name", "Discord ID", "Role", "MachineHash"])
+    LoadSessionLogIntoListView(lv)
+
+    adminGui.Add("Text", "x10 y320 w820 c" COLORS.textDim, "🔒 Global Ban Management")
+    adminGui.Add("Text", "x10 y345 w120 c" COLORS.text, "Discord ID:")
+    banEdit := adminGui.Add("Edit", "x130 y341 w320 h28 Background" COLORS.bgLight " c" COLORS.text)
+    banBtn := adminGui.Add("Button", "x470 y341 w90 h28 Background" COLORS.danger, "BAN")
+    unbanBtn := adminGui.Add("Button", "x570 y341 w90 h28 Background" COLORS.success, "UNBAN")
+    bannedLbl := adminGui.Add("Text", "x10 y380 w820 c" COLORS.textDim, "")
+    RefreshBannedFromServer(bannedLbl)
+
+    adminGui.Add("Text", "x10 y415 w820 c" COLORS.textDim, "🛡️ Admin Discord IDs")
+    adminGui.Add("Text", "x10 y440 w120 c" COLORS.text, "Discord ID:")
+    adminEdit := adminGui.Add("Edit", "x130 y436 w320 h28 Background" COLORS.bgLight " c" COLORS.text)
+    addAdminBtn := adminGui.Add("Button", "x470 y436 w90 h28 Background" COLORS.accentAlt, "Add")
+    delAdminBtn := adminGui.Add("Button", "x570 y436 w90 h28 Background" COLORS.danger, "Remove")
+    addThisPcBtn := adminGui.Add("Button", "x670 y436 w160 h28 Background" COLORS.accentAlt, "Add THIS PC ID")
+    adminLbl := adminGui.Add("Text", "x10 y475 w820 c" COLORS.textDim, "")
+    RefreshAdminDiscordLabel(adminLbl)
+
+    refreshBtn := adminGui.Add("Button", "x10 y510 w120 h32 Background" COLORS.card, "Refresh Log")
+    clearLogBtn := adminGui.Add("Button", "x140 y510 w120 h32 Background" COLORS.card, "Clear Log")
+    copySnippetBtn := adminGui.Add("Button", "x270 y510 w200 h32 Background" COLORS.card, "Copy Manifest Snippet")
+    setPassBtn := adminGui.Add("Button", "x480 y510 w170 h32 Background" COLORS.accentAlt, "Set Global Password")
+    changeMasterBtn := adminGui.Add("Button", "x660 y510 w170 h32 Background" COLORS.accentAlt, "Change Master Key")
+
+    banBtn.OnEvent("Click", OnBanDiscordId.Bind(banEdit, bannedLbl))
+    unbanBtn.OnEvent("Click", OnUnbanDiscordId.Bind(banEdit, bannedLbl))
+    addAdminBtn.OnEvent("Click", OnAddAdminDiscord.Bind(adminEdit, adminLbl))
+    delAdminBtn.OnEvent("Click", OnRemoveAdminDiscord.Bind(adminEdit, adminLbl))
+    addThisPcBtn.OnEvent("Click", OnAddThisPcAdmin.Bind(adminLbl))
+    refreshBtn.OnEvent("Click", OnRefreshLog.Bind(lv))
+    clearLogBtn.OnEvent("Click", OnClearLog.Bind(lv))
+    copySnippetBtn.OnEvent("Click", OnCopySnippet.Bind(DEFAULT_USER))
+    setPassBtn.OnEvent("Click", OnSetGlobalPassword.Bind(DEFAULT_USER))
+    changeMasterBtn.OnEvent("Click", OnChangeMasterKey.Bind())
+
+    adminGui.OnEvent("Close", (*) => adminGui.Destroy())
+    adminGui.Show("w850 h560 Center")
+}
+
+; ================= ADMIN PANEL EVENT HANDLERS =================
+
+OnSetGlobalPassword(defaultUser, *) {
+    pw := InputBox("Enter NEW universal password (this pushes to global manifest).", "AHK VAULT - Set Global Password", "Password w560 h190")
+    if (pw.Result != "OK")
+        return
+
+    newPass := Trim(pw.Value)
+    if (newPass = "") {
+        MsgBox "Password cannot be blank.", "AHK VAULT - Invalid", "Icon! 0x30"
+        return
+    }
+
+    h := HashPassword(newPass)
+    body := '{"cred_user":"' defaultUser '","cred_hash":"' h '"}'
+
+    try {
+        WorkerPost("/cred/set", body)
+        RefreshManifestAndLauncherBeforeLogin()
+        MsgBox "✅ Global password updated in manifest.`n`nNew cred_hash: " h, "AHK VAULT", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to set global password:`n" err.Message, "AHK VAULT", "Icon! 0x10"
+    }
+}
+
+OnBanDiscordId(banEdit, bannedLbl, *) {
+    did := Trim(banEdit.Value)
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/ban", '{"discord_id":"' did '"}')
+        AddBannedDiscordId(did)
+        RefreshBannedFromServer(bannedLbl)
+        MsgBox "✅ Globally BANNED: " did, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to ban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+OnUnbanDiscordId(banEdit, bannedLbl, *) {
+    did := Trim(banEdit.Value)
+    did := RegExReplace(did, "[^\d]", "")
+
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/unban", '{"discord_id":"' did '"}')
+        lists := ResyncListsFromManifestNow()
+        RefreshBannedFromServer(bannedLbl)
+
+        stillThere := false
+        for x in lists.banned {
+            if (Trim(x) = did) {
+                stillThere := true
+                break
+            }
+        }
+
+        if stillThere {
+            MsgBox "⚠️ Unban request sent, but ID is STILL in global manifest.`n`nID: " did, "AHK VAULT - Admin", "Icon! 0x30"
+        } else {
+            MsgBox "✅ Globally UNBANNED: " did, "AHK VAULT - Admin", "Iconi"
+            ClearMachineBan()
+        }
+    } catch as err {
+        MsgBox "❌ Failed to unban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+OnAddAdminDiscord(adminEdit, adminLbl, *) {
+    did := Trim(adminEdit.Value)
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/admin/add", '{"discord_id":"' did '"}')
+        AddAdminDiscordId(did)
+        RefreshAdminDiscordLabel(adminLbl)
+        MsgBox "✅ Globally added admin: " did, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to add admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+OnRemoveAdminDiscord(adminEdit, adminLbl, *) {
+    did := Trim(adminEdit.Value)
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        return
+    }
+
+    try {
+        WorkerPost("/admin/remove", '{"discord_id":"' did '"}')
+        RemoveAdminDiscordId(did)
+        RefreshAdminDiscordLabel(adminLbl)
+        MsgBox "✅ Globally removed admin: " did, "AHK VAULT - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to remove admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+    }
+}
+
+OnAddThisPcAdmin(adminLbl, *) {
+    did := Trim(ReadDiscordId())
+    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
+        MsgBox "This PC does not have a valid Discord ID saved.", "AHK VAULT - Admin", "Icon! 0x30"
+        return
+    }
+    try WorkerPost("/admin/add", '{"discord_id":"' did '"}')
+    catch {
+    }
+    AddAdminDiscordId(did)
+    RefreshAdminDiscordLabel(adminLbl)
+    MsgBox "✅ Added THIS PC as admin:`n" did, "AHK VAULT - Admin", "Iconi"
+}
+
+OnRefreshLog(lv, *) {
+    lv.Delete()
+    LoadSessionLogIntoListView(lv)
+}
+
+OnClearLog(lv, *) {
+    global SESSION_LOG_FILE
+    if FileExist(SESSION_LOG_FILE) {
+        FileDelete SESSION_LOG_FILE
+        lv.Delete()
+        MsgBox "✅ Login log cleared.", "AHK VAULT - Admin", "Iconi"
+    } else {
+        MsgBox "ℹ️ No log found.", "AHK VAULT - Admin", "Iconi"
+    }
+}
+
+OnCopySnippet(defaultUser, *) {
+    CopyManifestCredentialSnippet(defaultUser)
+}
+
+OnChangeMasterKey(*) {
+    global MASTER_KEY
+
+    ib := InputBox("Enter CURRENT Master Key to change it:", "AHK VAULT - Change Master Key", "Password w520 h180")
+    if (ib.Result != "OK")
+        return
+    if (Trim(ib.Value) != MASTER_KEY) {
+        MsgBox "❌ Current master key incorrect.", "AHK VAULT - Denied", "Icon! 0x10"
+        return
+    }
+
+    nb := InputBox("Enter NEW Master Key:", "AHK VAULT - New Master Key", "Password w520 h180")
+    if (nb.Result != "OK")
+        return
+    newKey := Trim(nb.Value)
+    if (newKey = "") {
+        MsgBox "Master key cannot be blank.", "AHK VAULT - Invalid", "Icon! 0x30"
+        return
+    }
+
+    cb := InputBox("Confirm NEW Master Key:", "AHK VAULT - Confirm Master Key", "Password w520 h180")
+    if (cb.Result != "OK")
+        return
+    if (Trim(cb.Value) != newKey) {
+        MsgBox "❌ Keys do not match.", "AHK VAULT - Invalid", "Icon! 0x30"
+        return
+    }
+
+    if SaveAuthConfig() {
+        MASTER_KEY := newKey
+        SaveAuthConfig()
+        MsgBox "✅ Master key updated and saved on this PC.", "AHK VAULT - Success", "Iconi"
+    } else {
+        MsgBox "❌ Failed to save master key.", "AHK VAULT - Error", "Icon! 0x10"
+    }
 }
 
 ManualUpdate(*) {
