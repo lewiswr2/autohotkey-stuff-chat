@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #SingleInstance Force
 
 global LAUNCHER_VERSION := "2.0.5"
@@ -122,7 +122,7 @@ CheckForUpdatesPrompt() {
         if SafeDownload(manifest.zip_url, tmpZip, 30000) && IsValidZip(tmpZip) {
             downloadSuccess := true
         } else {
-            try if FileExist(tmpZip) FileDelete tmpZip
+            try if FileExist(tmpZip) FileDelete(tmpZip)
             if (attempts < maxAttempts)
                 Sleep 1000
         }
