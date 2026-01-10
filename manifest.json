@@ -14,5 +14,9 @@
   ],
   "changelog": [
     "QoL Changes :)"
-  ]
+  ],
+  "banned_hwids": [],
+  "hwid_bindings": {
+    "1247055057489231914": "1525703921"
+  }
 }
