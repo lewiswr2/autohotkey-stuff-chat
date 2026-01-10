@@ -5,12 +5,8 @@
   "webhook": "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_",
   "cred_user": "AHKvaultmacros@discord",
   "cred_hash": "1105182512",
-  "cred_password": "yourpassword123",
+  "cred_password": "test123",
   "banned_discord_ids": [],
-  "admin_discord_ids": [
-    "1247055057489231914"
-  ],
-  "changelog": [
-    "QoL Changed"
-  ]
+  "admin_discord_ids": ["1247055057489231914"], ["886398974456655892"],
+  "changelog": ["QoL Changed"]
 }
