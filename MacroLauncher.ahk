@@ -2521,12 +2521,20 @@ AdminPanel(*) {
     RefreshBannedFromServer(bannedLbl)
     
     ; ===== HWID BAN =====
-    adminGui.Add("Text", "x10 y420 w120 c" COLORS.text, "HWID:")
-    hwidEdit := adminGui.Add("Edit", "x130 y416 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
-    hwidEdit.Value := Trim(GetHardwareId())
-    
-    banHwidBtn := adminGui.Add("Button", "x520 y416 w110 h28 Background" COLORS.danger, "BAN HWID")
-    unbanHwidBtn := adminGui.Add("Button", "x640 y416 w110 h28 Background" COLORS.success, "UNBAN HWID")
+adminGui.Add("Text", "x10 y420 w120 c" COLORS.text, "HWID:")
+hwidEdit := adminGui.Add("Edit", "x130 y416 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
+
+; Initialize with current machine's HWID
+try {
+    currentHwid := GetHardwareId()
+    if (currentHwid != "")
+        hwidEdit.Value := currentHwid
+} catch {
+    ; Silent fail - user can enter manually
+}
+
+banHwidBtn := adminGui.Add("Button", "x520 y416 w110 h28 Background" COLORS.danger, "BAN HWID")
+unbanHwidBtn := adminGui.Add("Button", "x640 y416 w110 h28 Background" COLORS.success, "UNBAN HWID")
     
     bannedHwidLbl := adminGui.Add("Text", "x10 y450 w880 c" COLORS.textDim, "")
     try RefreshBannedHwidLabel(bannedHwidLbl)
@@ -2848,9 +2856,17 @@ RefreshBannedHwidLabel(lblCtrl) {
 }
 
 OnBanHwid(hwidEdit, bannedHwidLbl, *) {
-    hwid := Trim(hwidEdit.Value)
+    ; Get the value from the edit control
+    hwidValue := ""
+    try {
+        hwidValue := hwidEdit.Value
+    } catch {
+        MsgBox "Failed to read HWID from edit control.", "AHK Vault - Admin", "Icon!"
+        return
+    }
     
-    ; Clean the HWID - remove any non-numeric characters
+    ; Clean and validate the HWID
+    hwid := Trim(hwidValue)
     hwid := RegExReplace(hwid, "[^\d]", "")
     
     if (hwid = "") {
@@ -2859,8 +2875,13 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
     }
     
     try {
-        resp := WorkerPost("/ban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
-        ResyncListsFromManifestNow()
+        body := '{"hwid":"' JsonEscape(hwid) '"}'
+        resp := WorkerPost("/ban-hwid", body)
+        
+        ; Resync and refresh display
+        try ResyncListsFromManifestNow()
+        catch
+        
         RefreshBannedHwidLabel(bannedHwidLbl)
         MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
     } catch as err {
@@ -2869,9 +2890,17 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
 }
 
 OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
-    hwid := Trim(hwidEdit.Value)
+    ; Get the value from the edit control
+    hwidValue := ""
+    try {
+        hwidValue := hwidEdit.Value
+    } catch {
+        MsgBox "Failed to read HWID from edit control.", "AHK Vault - Admin", "Icon!"
+        return
+    }
     
-    ; Clean the HWID
+    ; Clean and validate the HWID
+    hwid := Trim(hwidValue)
     hwid := RegExReplace(hwid, "[^\d]", "")
     
     if (hwid = "") {
@@ -2880,8 +2909,13 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
     }
     
     try {
-        resp := WorkerPost("/unban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
-        ResyncListsFromManifestNow()
+        body := '{"hwid":"' JsonEscape(hwid) '"}'
+        resp := WorkerPost("/unban-hwid", body)
+        
+        ; Resync and refresh display
+        try ResyncListsFromManifestNow()
+        catch
+        
         RefreshBannedHwidLabel(bannedHwidLbl)
         MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
     } catch as err {
