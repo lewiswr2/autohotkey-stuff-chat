@@ -2402,22 +2402,22 @@ WriteLinesToFile(path, arr) {
 
 ResyncListsFromManifestNow() {
     global MANIFEST_URL, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE, HWID_BAN_FILE
-
+    
     tmp := A_Temp "\manifest_live.json"
-
-    if !SafeDownload(MANIFEST_URL, tmp, 20000)
+    
+    if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmp, 20000)
         throw Error("Failed to download manifest from server.")
-
+    
     json := FileRead(tmp, "UTF-8")
     lists := ParseManifestLists(json)
-
+    
     if !IsObject(lists)
         throw Error("Failed to parse manifest lists.")
-
+    
     OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
     OverwriteListFile(ADMIN_DISCORD_FILE, lists.admins)
     OverwriteListFile(HWID_BAN_FILE, lists.banned_hwids)
-
+    
     return lists
 }
 
@@ -2721,36 +2721,39 @@ RefreshBannedDiscordLabel(lblCtrl) {
 
 RefreshBannedFromServer(lblCtrl) {
     global MANIFEST_URL, DISCORD_BAN_FILE
-
+    
     tmp := A_Temp "\manifest_live.json"
-    if !SafeDownload(MANIFEST_URL, tmp, 20000) {
+    
+    if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmp, 20000) {
         lblCtrl.Value := "Banned Discord IDs: (sync failed)"
         return false
     }
-
-    try json := FileRead(tmp, "UTF-8")
+    
+    try
+        json := FileRead(tmp, "UTF-8")
     catch {
         lblCtrl.Value := "Banned Discord IDs: (sync failed)"
         return false
     }
-
+    
     lists := ParseManifestLists(json)
     if !IsObject(lists) {
         lblCtrl.Value := "Banned Discord IDs: (sync failed)"
         return false
     }
-
+    
     OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
-
+    
     if (lists.banned.Length = 0) {
         lblCtrl.Value := "Banned Discord IDs: (none)"
         return true
     }
-
+    
     s := "Banned Discord IDs: "
     for id in lists.banned
         s .= id ", "
     lblCtrl.Value := RTrim(s, ", ")
+    
     return true
 }
 
@@ -2845,12 +2848,16 @@ RefreshBannedHwidLabel(lblCtrl) {
 }
 
 OnBanHwid(hwidEdit, bannedHwidLbl, *) {
-    hwid := RegExReplace(Trim(hwidEdit.Value), "[^\d]", "")
+    hwid := Trim(hwidEdit.Value)
+    
+    ; Clean the HWID - remove any non-numeric characters
+    hwid := RegExReplace(hwid, "[^\d]", "")
+    
     if (hwid = "") {
         MsgBox "Enter a valid HWID (numbers only).", "AHK Vault - Admin", "Icon!"
         return
     }
-
+    
     try {
         resp := WorkerPost("/ban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
         ResyncListsFromManifestNow()
@@ -2862,12 +2869,16 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
 }
 
 OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
-    hwid := RegExReplace(Trim(hwidEdit.Value), "[^\d]", "")
+    hwid := Trim(hwidEdit.Value)
+    
+    ; Clean the HWID
+    hwid := RegExReplace(hwid, "[^\d]", "")
+    
     if (hwid = "") {
         MsgBox "Enter a valid HWID (numbers only).", "AHK Vault - Admin", "Icon!"
         return
     }
-
+    
     try {
         resp := WorkerPost("/unban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
         ResyncListsFromManifestNow()
@@ -2881,51 +2892,77 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
 GetHardwareId() {
     hwid := ""
     
+    ; Get Processor ID
     try {
         objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
         for proc in objWMI.ExecQuery("SELECT ProcessorId FROM Win32_Processor") {
-            hwid .= proc.ProcessorId
+            if (proc.ProcessorId != "" && proc.ProcessorId != "None") {
+                hwid .= proc.ProcessorId
+            }
             break
         }
     } catch {
+        ; Silent fail, continue to next method
     }
     
+    ; Get Motherboard Serial Number
     try {
         objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
         for board in objWMI.ExecQuery("SELECT SerialNumber FROM Win32_BaseBoard") {
-            hwid .= board.SerialNumber
+            if (board.SerialNumber != "" && board.SerialNumber != "None") {
+                hwid .= board.SerialNumber
+            }
             break
         }
     } catch {
+        ; Silent fail, continue to next method
     }
     
+    ; Get BIOS Serial Number
     try {
         objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
         for bios in objWMI.ExecQuery("SELECT SerialNumber FROM Win32_BIOS") {
-            hwid .= bios.SerialNumber
+            if (bios.SerialNumber != "" && bios.SerialNumber != "None") {
+                hwid .= bios.SerialNumber
+            }
             break
         }
     } catch {
+        ; Silent fail, continue to next method
     }
     
+    ; Get Volume Serial Number (C: drive)
     try {
         objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
         for disk in objWMI.ExecQuery("SELECT VolumeSerialNumber FROM Win32_LogicalDisk WHERE DeviceID='C:'") {
-            hwid .= disk.VolumeSerialNumber
+            if (disk.VolumeSerialNumber != "" && disk.VolumeSerialNumber != "None") {
+                hwid .= disk.VolumeSerialNumber
+            }
             break
         }
     } catch {
+        ; Silent fail, continue to next method
     }
     
+    ; Fallback: Use computer name and username if no hardware info found
     if (hwid = "") {
         hwid := A_ComputerName . A_UserName
     }
     
+    ; Hash the combined hardware ID to create a unique numeric identifier
     hash := 0
-    loop parse hwid
+    loop parse hwid {
         hash := Mod(hash * 31 + Ord(A_LoopField), 2147483647)
+    }
     
-    return hash
+    ; Return as string to ensure compatibility
+    return String(hash)
+}
+
+NoCacheUrl(url) {
+    ; Add cache-busting parameter to prevent browser/system caching
+    separator := InStr(url, "?") ? "&" : "?"
+    return url . separator . "nocache=" . A_TickCount
 }
 
 SendGlobalLoginLog(role, loginUser) {
@@ -3025,17 +3062,21 @@ WorkerPostPublic(endpoint, bodyJson) {
     url := RTrim(WORKER_URL, "/") "/" LTrim(endpoint, "/")
 
     req := ComObject("WinHttp.WinHttpRequest.5.1")
-    req.Option[6] := 1
+    
+    ; DO NOT set req.Option[6] - it breaks TLS on many systems
+    ; timeouts: resolve, connect, send, receive (ms)
     req.SetTimeouts(15000, 15000, 15000, 15000)
 
     req.Open("POST", url, false)
-    req.SetRequestHeader("Content-Type", "application/json")
+    req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
+    req.SetRequestHeader("Accept", "application/json")
     req.SetRequestHeader("User-Agent", "AHK-Vault")
 
     req.Send(bodyJson)
 
-    status := req.Status
+    status := 0
     resp := ""
+    try status := req.Status
     try resp := req.ResponseText
 
     if (status < 200 || status >= 300)
