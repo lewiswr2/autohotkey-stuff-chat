@@ -646,7 +646,6 @@ CheckForUpdatesPrompt() {
 
     updateMsg := "Update complete!`n`nVersion " manifest.version " installed.`n`n"
     if iconsUpdated
-        updateMsg .= "✓ Icons updated`n"
     updateMsg .= "`nChanges:`n" changelogText
 
     MsgBox updateMsg, "Update Finished", "Iconi"
@@ -892,7 +891,6 @@ ManualUpdate(*) {
     
     updateMsg := "Update complete!`n`nVersion " manifest.version " installed.`n`n"
     if iconsUpdated
-        updateMsg .= "✓ Icons updated`n"
     updateMsg .= "`nChanges:`n" changelogText "`n`nRestart the launcher to see changes."
     
     MsgBox(updateMsg, "Update Finished", "Iconi")
