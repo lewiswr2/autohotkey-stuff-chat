@@ -1,6 +1,51 @@
 {
   "logs": [
     {
+      "t": "2026-01-11 18:18:08",
+      "pc": "YUP",
+      "user": "edwar",
+      "discordId": "886398974456655892",
+      "hwid": "160377749",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-12 00:52:36",
+      "pc": "DESKTOP-EEQ132A",
+      "user": "Tedi",
+      "discordId": "785479878845136907",
+      "hwid": "1508793848",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-11 22:37:17",
+      "pc": "LEWIS",
+      "user": "Lewis",
+      "discordId": "1247055057489231914",
+      "hwid": "1525703921",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-11 22:36:24",
+      "pc": "LEWIS",
+      "user": "Lewis",
+      "discordId": "1247055057489231914",
+      "hwid": "1525703921",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-11 22:33:54",
+      "pc": "LEWIS",
+      "user": "Lewis",
+      "discordId": "123123",
+      "hwid": "1525703921",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
       "t": "2026-01-11 14:49:22",
       "pc": "YUP",
       "user": "edwar",
