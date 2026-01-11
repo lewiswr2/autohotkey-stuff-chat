@@ -45,6 +45,11 @@ global mainGui := 0
 global MACHINE_KEY := ""
 global RATINGS_FILE := ""
 global macroRatings := Map()
+global ratingsCache := Map()
+global ratingsCacheTime := 0
+global RATINGS_CACHE_DURATION := 30000
+global isLoadingRatings := false
+global ratingsRefreshTimer := 0
 
 global COLORS := {
     bg: "0x0a0e14",
@@ -1026,7 +1031,7 @@ CreateMainGui() {
     launcherImage := ICON_DIR "\Launcher.png"
     if FileExist(launcherImage) {
         try {
-            mainGui.Add("Picture", "x0 y-5 w100 h100 BackgroundTrans", launcherImage)
+            mainGui.Add("Picture", "x5 y0 w75 h75 BackgroundTrans", launcherImage)
         }
     }
     
@@ -1221,6 +1226,7 @@ OpenCategory(category) {
     win.__currentPage := 1
     win.__itemsPerPage := 8
     win.__sortBy := "favorites"
+    win.__category := category
     
     gameIcon := GetGameIcon(category)
     if (gameIcon && FileExist(gameIcon)) {
@@ -1234,7 +1240,7 @@ OpenCategory(category) {
     
     backBtn := win.Add("Button", "x20 y25 w70 h35 Background" COLORS.accentHover, "← Back")
     backBtn.SetFont("s10")
-    backBtn.OnEvent("Click", (*) => win.Destroy())
+    backBtn.OnEvent("Click", (*) => CloseCategory(win))
     
     title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", category)
     title.SetFont("s22 bold")
@@ -1250,11 +1256,32 @@ OpenCategory(category) {
     
     win.__scrollY := 110
     
-    win.OnEvent("Close", (*) => win.Destroy())
+    win.OnEvent("Close", (*) => CloseCategory(win))
     
-    RenderCards(win)
-    
+    ; Show loading message
+    loadingMsg := win.Add("Text", "x25 y300 w700 h50 c" COLORS.textDim " Center", "Loading ratings...")
+    loadingMsg.SetFont("s12")
     win.Show("w750 h640 Center")
+    
+    ; Fetch ratings in background
+    SetTimer () => LoadRatingsAndRender(win, loadingMsg, category), -100
+    
+    ; Start auto-refresh
+    StartRatingsAutoRefresh(category)
+}
+
+CloseCategory(win) {
+    StopRatingsAutoRefresh()
+    win.Destroy()
+}
+
+LoadRatingsAndRender(win, loadingMsg, category) {
+    try {
+        loadingMsg.Destroy()
+    }
+    
+    GetAllRatingsForCategory(category)
+    RenderCards(win)
 }
 
 ChangeSortAndRefresh(win, sortText, category) {
@@ -1300,6 +1327,7 @@ OpenCategoryWithSort(category, sortBy := "favorites") {
     win.__currentPage := 1
     win.__itemsPerPage := 8
     win.__sortBy := sortBy
+    win.__category := category
     
     gameIcon := GetGameIcon(category)
     if (gameIcon && FileExist(gameIcon)) {
@@ -1313,7 +1341,7 @@ OpenCategoryWithSort(category, sortBy := "favorites") {
     
     backBtn := win.Add("Button", "x20 y25 w70 h35 Background" COLORS.accentHover, "← Back")
     backBtn.SetFont("s10")
-    backBtn.OnEvent("Click", (*) => win.Destroy())
+    backBtn.OnEvent("Click", (*) => CloseCategory(win))
     
     title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", category)
     title.SetFont("s22 bold")
@@ -1338,11 +1366,18 @@ OpenCategoryWithSort(category, sortBy := "favorites") {
     
     win.__scrollY := 110
     
-    win.OnEvent("Close", (*) => win.Destroy())
+    win.OnEvent("Close", (*) => CloseCategory(win))
     
-    RenderCards(win)
-    
+    ; Show loading message
+    loadingMsg := win.Add("Text", "x25 y300 w700 h50 c" COLORS.textDim " Center", "Loading ratings...")
+    loadingMsg.SetFont("s12")
     win.Show("w750 h640 Center")
+    
+    ; Fetch ratings in background
+    SetTimer () => LoadRatingsAndRender(win, loadingMsg, category), -100
+    
+    ; Start auto-refresh
+    StartRatingsAutoRefresh(category)
 }
 
 RenderCards(win) {
@@ -1476,39 +1511,57 @@ CreateFullWidthCard(win, item, x, y, w, h) {
         win.__cards.Push(runCountCtrl)
     }
     
-    ; Add ratings display
+    ; Add ratings display with percentage
     currentPath := item.path
     ratings := GetMacroRating(currentPath)
     userVote := GetUserVote(currentPath)
     
+    ; Show offline indicator if ratings failed to load
+    isOffline := ratings.HasProp("offline") && ratings.offline
+    
     ; Thumbs up button
     upColor := (userVote = "up") ? COLORS.success : COLORS.cardHover
-    upBtn := win.Add("Button", "x" (x + w - 320) " y" (y + 20) " w35 h35 Background" upColor, "👍")
+    upBtn := win.Add("Button", "x" (x + w - 350) " y" (y + 20) " w35 h35 Background" upColor, "👍")
     upBtn.SetFont("s16")
-    upBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "up"))
+    if !isOffline
+        upBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "up"))
     win.__cards.Push(upBtn)
     
-    upCountCtrl := win.Add("Text", "x" (x + w - 280) " y" (y + 25) " w40 h25 c" COLORS.text " BackgroundTrans Center", ratings.upvotes)
+    upCountCtrl := win.Add("Text", "x" (x + w - 310) " y" (y + 25) " w40 h25 c" COLORS.text " BackgroundTrans Center", ratings.upvotes)
     upCountCtrl.SetFont("s11 bold")
     win.__cards.Push(upCountCtrl)
     
     ; Thumbs down button
     downColor := (userVote = "down") ? COLORS.danger : COLORS.cardHover
-    downBtn := win.Add("Button", "x" (x + w - 235) " y" (y + 20) " w35 h35 Background" downColor, "👎")
+    downBtn := win.Add("Button", "x" (x + w - 265) " y" (y + 20) " w35 h35 Background" downColor, "👎")
     downBtn.SetFont("s16")
-    downBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "down"))
+    if !isOffline
+        downBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "down"))
     win.__cards.Push(downBtn)
     
-    downCountCtrl := win.Add("Text", "x" (x + w - 195) " y" (y + 25) " w40 h25 c" COLORS.text " BackgroundTrans Center", ratings.downvotes)
+    downCountCtrl := win.Add("Text", "x" (x + w - 225) " y" (y + 25) " w40 h25 c" COLORS.text " BackgroundTrans Center", ratings.downvotes)
     downCountCtrl.SetFont("s11 bold")
     win.__cards.Push(downCountCtrl)
     
+    ; Show percentage
+    percentage := GetRatingPercentage(ratings.upvotes, ratings.downvotes)
+    percentColor := isOffline ? COLORS.danger : COLORS.textDim
+    percentCtrl := win.Add("Text", "x" (x + w - 350) " y" (y + 60) " w160 h20 c" percentColor " BackgroundTrans Center", isOffline ? "⚠ Offline" : percentage)
+    percentCtrl.SetFont("s9")
+    win.__cards.Push(percentCtrl)
+    
     ; Favorite button
     isFav := IsFavorite(currentPath)
-    favBtn := win.Add("Button", "x" (x + w - 145) " y" (y + 20) " w35 h35 Background" (isFav ? COLORS.favorite : COLORS.cardHover), isFav ? "★" : "☆")
-    favBtn.SetFont("s18")
-    favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
-    win.__cards.Push(favBtn)
+favBtn := win.Add(
+    "Button",
+    "x" (x + w - 145)
+    " y" (y + 20)  ; Adjust Y position slightly
+    " w35 h35 Center Background" (isFav ? COLORS.favorite : COLORS.cardHover),
+    isFav ? "★" : "✰"
+)
+favBtn.SetFont("s18", "Segoe UI Symbol")  ; Slightly larger font
+favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
+win.__cards.Push(favBtn)
     
     runBtn := win.Add("Button", "x" (x + w - 100) " y" (y + 20) " w90 h35 Background" COLORS.success, "▶ Run")
     runBtn.SetFont("s11 bold")
@@ -1569,16 +1622,19 @@ CreateGridCard(win, item, x, y, w, h) {
         win.__cards.Push(runCountCtrl)
     }
     
-    ; Add ratings display - moved to bottom left
+    ; Add ratings display
     currentPath := item.path
     ratings := GetMacroRating(currentPath)
     userVote := GetUserVote(currentPath)
+    
+    isOffline := ratings.HasProp("offline") && ratings.offline
     
     ; Thumbs up button
     upColor := (userVote = "up") ? COLORS.success : COLORS.cardHover
     upBtn := win.Add("Button", "x" (x + 15) " y" (y + 83) " w28 h22 Background" upColor, "👍")
     upBtn.SetFont("s11")
-    upBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "up"))
+    if !isOffline
+        upBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "up"))
     win.__cards.Push(upBtn)
     
     upCountCtrl := win.Add("Text", "x" (x + 48) " y" (y + 86) " w30 h18 c" COLORS.text " BackgroundTrans Center", ratings.upvotes)
@@ -1589,19 +1645,35 @@ CreateGridCard(win, item, x, y, w, h) {
     downColor := (userVote = "down") ? COLORS.danger : COLORS.cardHover
     downBtn := win.Add("Button", "x" (x + 83) " y" (y + 83) " w28 h22 Background" downColor, "👎")
     downBtn.SetFont("s11")
-    downBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "down"))
+    if !isOffline
+        downBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "down"))
     win.__cards.Push(downBtn)
     
     downCountCtrl := win.Add("Text", "x" (x + 116) " y" (y + 86) " w30 h18 c" COLORS.text " BackgroundTrans Center", ratings.downvotes)
     downCountCtrl.SetFont("s9 bold")
     win.__cards.Push(downCountCtrl)
     
+    ; Show percentage or offline status
+    percentage := GetRatingPercentage(ratings.upvotes, ratings.downvotes)
+    percentColor := isOffline ? COLORS.danger : COLORS.textDim
+    percentText := isOffline ? "⚠" : (ratings.upvotes + ratings.downvotes > 0 ? Round((ratings.upvotes / (ratings.upvotes + ratings.downvotes)) * 100) "%" : "-")
+    percentCtrl := win.Add("Text", "x" (x + 155) " y" (y + 86) " w40 h18 c" percentColor " BackgroundTrans Center", percentText)
+    percentCtrl.SetFont("s8 bold")
+    win.__cards.Push(percentCtrl)
+    
     ; Favorite button - top right
     isFav := IsFavorite(currentPath)
-    favBtn := win.Add("Button", "x" (x + w - 110) " y" (y + 15) " w20 h20 Background" (isFav ? COLORS.favorite : COLORS.cardHover), isFav ? "★" : "☆")
-    favBtn.SetFont("s10")
-    favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
-    win.__cards.Push(favBtn)
+favBtn := win.Add(
+    "Button",
+    "x" (x + w - 110)
+    " y" (y + 20)  ; Adjust Y position slightly
+    " w20 h20 Center Background" (isFav ? COLORS.favorite : COLORS.cardHover),
+    isFav ? "★" : "✰"
+)
+favBtn.SetFont("s11", "Segoe UI Symbol")  ; Slightly larger font
+favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
+win.__cards.Push(favBtn)
+
     
     ; Run button - top right
     runBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 15) " w80 h30 Background" COLORS.success, "▶ Run")
@@ -1700,37 +1772,138 @@ ParseRatingsJSON(json) {
     return result
 }
 
-GetMacroRating(macroPath) {
-    try {
-        body := '{"macro_path":"' JsonEscape(macroPath) '"}'
-        resp := WorkerPost("/ratings/get", body)
-        
-        if RegExMatch(resp, '"upvotes"\s*:\s*(\d+)', &m1) && RegExMatch(resp, '"downvotes"\s*:\s*(\d+)', &m2) {
-            return {
-                upvotes: Integer(m1[1]),
-                downvotes: Integer(m2[1])
-            }
-        }
-    } catch {
+; NEW: Batch fetch all ratings for a category
+GetAllRatingsForCategory(category) {
+    global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION, isLoadingRatings
+    
+    ; Check if cache is still valid
+    if (ratingsCache.Count > 0 && (A_TickCount - ratingsCacheTime) < RATINGS_CACHE_DURATION) {
+        return true
     }
     
-    return {upvotes: 0, downvotes: 0}
+    ; Prevent multiple simultaneous requests
+    if isLoadingRatings
+        return false
+    
+    isLoadingRatings := true
+    
+    try {
+        ; Get all macro paths for this category
+        macros := GetMacrosWithInfo(category)
+        if (macros.Length = 0) {
+            isLoadingRatings := false
+            return false
+        }
+        
+        ; Build array of paths for batch request
+        paths := []
+        for item in macros {
+            paths.Push(item.path)
+        }
+        
+        ; Create JSON array of paths
+        pathsJson := "["
+        for i, path in paths {
+            if (i > 1)
+                pathsJson .= ","
+            pathsJson .= '"' JsonEscape(path) '"'
+        }
+        pathsJson .= "]"
+        
+        body := '{"macro_paths":' pathsJson '}'
+        resp := WorkerPost("/ratings/batch", body)
+        
+        ; Parse response and cache it
+        if RegExMatch(resp, '"ratings"\s*:\s*{([^}]+)}', &m) {
+            ratingsCache := Map()
+            
+            ; Parse each rating entry
+            ratingsBlock := m[1]
+            pos := 1
+            while (pos := RegExMatch(ratingsBlock, '"([^"]+)"\s*:\s*{\s*"upvotes"\s*:\s*(\d+)\s*,\s*"downvotes"\s*:\s*(\d+)\s*}', &rm, pos)) {
+                key := rm[1]
+                ratingsCache[key] := {
+                    upvotes: Integer(rm[2]),
+                    downvotes: Integer(rm[3])
+                }
+                pos += StrLen(rm[0])
+            }
+            
+            ratingsCacheTime := A_TickCount
+            isLoadingRatings := false
+            return true
+        }
+    } catch as err {
+        ; Failed to fetch - use cached data if available
+        isLoadingRatings := false
+        return false
+    }
+    
+    isLoadingRatings := false
+    return false
 }
 
-SubmitMacroRating(macroPath, vote) {
-    global macroRatings
+; IMPROVED: Get cached rating or return offline defaults
+GetMacroRating(macroPath) {
+    global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION
     
     key := GetMacroKey(macroPath)
     
-    ; Check if user already voted
-    if macroRatings.Has(key) && macroRatings[key].userVote = vote {
-        MsgBox "You've already submitted this vote!", "Already Voted", "Iconi"
-        return false
+    ; Return cached rating if available and fresh
+    if ratingsCache.Has(key) && ((A_TickCount - ratingsCacheTime) < RATINGS_CACHE_DURATION) {
+        return ratingsCache[key]
+    }
+    
+    ; Return offline indicator
+    return {
+        upvotes: 0,
+        downvotes: 0,
+        offline: true
+    }
+}
+
+; IMPROVED: Submit rating with confirmation and better error handling
+SubmitMacroRating(macroPath, vote) {
+    global macroRatings, ratingsCache
+    
+    key := GetMacroKey(macroPath)
+    
+    ; Check if user wants to change their vote
+    if macroRatings.Has(key) && macroRatings[key].userVote != "" {
+        currentVote := macroRatings[key].userVote
+        
+        if (currentVote = vote) {
+            MsgBox "You've already voted " (vote = "up" ? "👍" : "👎") " on this macro!", "Already Voted", "Iconi"
+            return false
+        }
+        
+        ; Ask for confirmation to change vote
+        newVoteIcon := vote = "up" ? "👍" : "👎"
+        oldVoteIcon := currentVote = "up" ? "👍" : "👎"
+        
+        result := MsgBox(
+            "Change your vote from " oldVoteIcon " to " newVoteIcon "?`n`n"
+            "This will remove your previous vote and add the new one.",
+            "Change Vote",
+            "YesNo Iconi"
+        )
+        
+        if (result = "No")
+            return false
     }
     
     try {
         body := '{"macro_path":"' JsonEscape(macroPath) '","vote":"' vote '"}'
         resp := WorkerPost("/ratings/vote", body)
+        
+        ; Parse response to get updated counts
+        if RegExMatch(resp, '"upvotes"\s*:\s*(\d+)', &m1) && RegExMatch(resp, '"downvotes"\s*:\s*(\d+)', &m2) {
+            ; Update cache immediately
+            ratingsCache[key] := {
+                upvotes: Integer(m1[1]),
+                downvotes: Integer(m2[1])
+            }
+        }
         
         ; Save user's vote locally
         macroRatings[key] := {
@@ -1740,7 +1913,20 @@ SubmitMacroRating(macroPath, vote) {
         
         return true
     } catch as err {
-        MsgBox "Failed to submit rating: " err.Message, "Error", "Icon!"
+        ; Better error message
+        errorMsg := "Unable to submit your vote.`n`n"
+        
+        if InStr(err.Message, "Worker error") {
+            errorMsg .= "The rating server is currently offline.`n"
+            errorMsg .= "Your vote will be saved and synced later."
+        } else if InStr(err.Message, "timeout") {
+            errorMsg .= "Connection timed out.`n"
+            errorMsg .= "Please check your internet connection."
+        } else {
+            errorMsg .= "Error: " err.Message
+        }
+        
+        MsgBox errorMsg, "Vote Failed", "Icon!"
         return false
     }
 }
@@ -1755,10 +1941,53 @@ GetUserVote(macroPath) {
     return ""
 }
 
+; NEW: Calculate rating percentage
+GetRatingPercentage(upvotes, downvotes) {
+    total := upvotes + downvotes
+    if (total = 0)
+        return "No votes"
+    
+    percentage := Round((upvotes / total) * 100)
+    return percentage "% positive"
+}
+
+; NEW: Start auto-refresh timer
+StartRatingsAutoRefresh(category) {
+    global ratingsRefreshTimer, RATINGS_CACHE_DURATION
+    
+    if ratingsRefreshTimer
+        SetTimer ratingsRefreshTimer, 0
+    
+    ratingsRefreshTimer := () => RefreshRatingsInBackground(category)
+    SetTimer ratingsRefreshTimer, RATINGS_CACHE_DURATION
+}
+
+RefreshRatingsInBackground(category) {
+    global ratingsCache
+    
+    try {
+        GetAllRatingsForCategory(category)
+    } catch {
+    }
+}
+
+StopRatingsAutoRefresh() {
+    global ratingsRefreshTimer
+    
+    if ratingsRefreshTimer {
+        SetTimer ratingsRefreshTimer, 0
+        ratingsRefreshTimer := 0
+    }
+}
+
 VoteAndRefresh(win, macroPath, vote) {
     if SubmitMacroRating(macroPath, vote) {
-        RenderCards(win)
+        UpdateSingleCardRating(win, macroPath)
     }
+}
+
+UpdateSingleCardRating(win, macroPath) {
+    RenderCards(win)
 }
 
 ToggleFavoriteAndRefresh(win, macroPath) {
