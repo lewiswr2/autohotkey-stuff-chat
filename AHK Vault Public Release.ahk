@@ -1072,7 +1072,7 @@ LoadSessionLogIntoListView(lv) {
 CopyManifestCredentialSnippet(username) {
     pw := InputBox(
         "Enter the NEW universal password.`n`nThis will copy cred_user + cred_hash for manifest.json.",
-        "AHK VAULT - Generate manifest snippet",
+        "AHK Vault - Generate manifest snippet",
         "Password w560 h190"
     )
     if (pw.Result != "OK")
@@ -1080,7 +1080,7 @@ CopyManifestCredentialSnippet(username) {
 
     newPass := Trim(pw.Value)
     if (newPass = "") {
-        MsgBox "Password cannot be blank.", "AHK VAULT - Invalid", "Icon! 0x30"
+        MsgBox "Password cannot be blank.", "AHK Vault - Invalid", "Icon! 0x30"
         return
     }
 
@@ -1088,7 +1088,7 @@ CopyManifestCredentialSnippet(username) {
     snippet := '"cred_user": "' username '",' "`n" '"cred_hash": "' h '"'
     A_Clipboard := snippet
 
-    MsgBox "✅ Copied to clipboard.`n`nPaste into manifest.json:`n`n" snippet, "AHK VAULT", "Iconi"
+    MsgBox "✅ Copied to clipboard.`n`nPaste into manifest.json:`n`n" snippet, "AHK Vault", "Iconi"
 }
 
 ; ================= ADMIN PANEL GUI =================
@@ -1097,17 +1097,17 @@ AdminPanel(alreadyAuthed := false) {
     global MASTER_KEY, COLORS, DEFAULT_USER
 
     if !alreadyAuthed {
-        ib := InputBox("Enter MASTER KEY to open Admin Panel:", "AHK VAULT - Admin Panel", "Password w460 h170")
+        ib := InputBox("Enter MASTER KEY to open Admin Panel:", "AHK Vault - Admin Panel", "Password w460 h170")
         if (ib.Result != "OK")
             return
         if (Trim(ib.Value) != MASTER_KEY) {
-            MsgBox "❌ Invalid master key.", "AHK VAULT - Access Denied", "Icon! 0x10"
+            MsgBox "❌ Invalid master key.", "AHK Vault - Access Denied", "Icon! 0x10"
             return
         }
     }
 
     ; ----- WINDOW -----
-    adminGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Admin Panel")
+    adminGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Admin Panel")
     adminGui.BackColor := COLORS.bg
     adminGui.SetFont("s9 c" COLORS.text, "Segoe UI")
 
@@ -1216,13 +1216,13 @@ refreshBtn.OnEvent("Click", (*) => LoadGlobalSessionLogIntoListView2(lv, 200))
 ; ================= ADMIN PANEL EVENT HANDLERS =================
 
 OnSetGlobalPassword(defaultUser, *) {
-    pw := InputBox("Enter NEW universal password (this pushes to global manifest).", "AHK VAULT - Set Global Password", "Password w560 h190")
+    pw := InputBox("Enter NEW universal password (this pushes to global manifest).", "AHK Vault - Set Global Password", "Password w560 h190")
     if (pw.Result != "OK")
         return
 
     newPass := Trim(pw.Value)
     if (newPass = "") {
-        MsgBox "Password cannot be blank.", "AHK VAULT - Invalid", "Icon! 0x30"
+        MsgBox "Password cannot be blank.", "AHK Vault - Invalid", "Icon! 0x30"
         return
     }
 
@@ -1232,16 +1232,16 @@ OnSetGlobalPassword(defaultUser, *) {
     try {
         WorkerPost("/cred/set", body)
         RefreshManifestAndLauncherBeforeLogin()
-        MsgBox "✅ Global password updated in manifest.`n`nNew cred_hash: " h, "AHK VAULT", "Iconi"
+        MsgBox "✅ Global password updated in manifest.`n`nNew cred_hash: " h, "AHK Vault", "Iconi"
     } catch as err {
-        MsgBox "❌ Failed to set global password:`n" err.Message, "AHK VAULT", "Icon! 0x10"
+        MsgBox "❌ Failed to set global password:`n" err.Message, "AHK Vault", "Icon! 0x10"
     }
 }
 
 OnBanDiscordId(banEdit, bannedLbl, *) {
     did := Trim(banEdit.Value)
     if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -1249,9 +1249,9 @@ OnBanDiscordId(banEdit, bannedLbl, *) {
         WorkerPost("/ban", '{"discord_id":"' did '"}')
         AddBannedDiscordId(did)
         RefreshBannedFromServer(bannedLbl)
-        MsgBox "✅ Globally BANNED: " did, "AHK VAULT - Admin", "Iconi"
+        MsgBox "✅ Globally BANNED: " did, "AHK Vault - Admin", "Iconi"
     } catch as err {
-        MsgBox "❌ Failed to ban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+        MsgBox "❌ Failed to ban globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
 }
 
@@ -1260,7 +1260,7 @@ OnUnbanDiscordId(banEdit, bannedLbl, *) {
     did := RegExReplace(did, "[^\d]", "")
 
     if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -1289,13 +1289,13 @@ OnUnbanDiscordId(banEdit, bannedLbl, *) {
         }
 
         if stillThere {
-            MsgBox "⚠️ Unban request sent, but ID is STILL in global manifest (GitHub may be caching/lagging).`n`nID: " did, "AHK VAULT - Admin", "Icon! 0x30"
+            MsgBox "⚠️ Unban request sent, but ID is STILL in global manifest (GitHub may be caching/lagging).`n`nID: " did, "AHK Vault - Admin", "Icon! 0x30"
         } else {
-            MsgBox "✅ Globally UNBANNED: " did, "AHK VAULT - Admin", "Iconi"
+            MsgBox "✅ Globally UNBANNED: " did, "AHK Vault - Admin", "Iconi"
             ClearMachineBan()
         }
     } catch as err {
-        MsgBox "❌ Failed to unban globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+        MsgBox "❌ Failed to unban globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
 }
 
@@ -1303,7 +1303,7 @@ OnUnbanDiscordId(banEdit, bannedLbl, *) {
 OnAddAdminDiscord(adminEdit, adminLbl, *) {
     did := Trim(adminEdit.Value)
     if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -1311,16 +1311,16 @@ OnAddAdminDiscord(adminEdit, adminLbl, *) {
         WorkerPost("/admin/add", '{"discord_id":"' did '"}')
         AddAdminDiscordId(did)
         RefreshAdminDiscordLabel(adminLbl)
-        MsgBox "✅ Globally added admin: " did, "AHK VAULT - Admin", "Iconi"
+        MsgBox "✅ Globally added admin: " did, "AHK Vault - Admin", "Iconi"
     } catch as err {
-        MsgBox "❌ Failed to add admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+        MsgBox "❌ Failed to add admin globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
 }
 
 OnRemoveAdminDiscord(adminEdit, adminLbl, *) {
     did := Trim(adminEdit.Value)
     if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK VAULT - Admin", "Icon!"
+        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -1328,16 +1328,16 @@ OnRemoveAdminDiscord(adminEdit, adminLbl, *) {
         WorkerPost("/admin/remove", '{"discord_id":"' did '"}')
         RemoveAdminDiscordId(did)
         RefreshAdminDiscordLabel(adminLbl)
-        MsgBox "✅ Globally removed admin: " did, "AHK VAULT - Admin", "Iconi"
+        MsgBox "✅ Globally removed admin: " did, "AHK Vault - Admin", "Iconi"
     } catch as err {
-        MsgBox "❌ Failed to remove admin globally:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+        MsgBox "❌ Failed to remove admin globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
 }
 
 OnAddThisPcAdmin(adminLbl, *) {
     did := Trim(ReadDiscordId())
     if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "This PC does not have a valid Discord ID saved.", "AHK VAULT - Admin", "Icon! 0x30"
+        MsgBox "This PC does not have a valid Discord ID saved.", "AHK Vault - Admin", "Icon! 0x30"
         return
     }
     try WorkerPost("/admin/add", '{"discord_id":"' did '"}')
@@ -1345,14 +1345,14 @@ OnAddThisPcAdmin(adminLbl, *) {
     }
     AddAdminDiscordId(did)
     RefreshAdminDiscordLabel(adminLbl)
-    MsgBox "✅ Added THIS PC as admin:`n" did, "AHK VAULT - Admin", "Iconi"
+    MsgBox "✅ Added THIS PC as admin:`n" did, "AHK Vault - Admin", "Iconi"
 }
 
 OnRefreshLog(lv, *) {
     try {
         LoadGlobalSessionLogIntoListView(lv, 200)
     } catch as err {
-        MsgBox "Refresh failed:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+        MsgBox "Refresh failed:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
 }
 
@@ -1361,9 +1361,9 @@ OnClearLog(lv, *) {
     try {
         WorkerPost("/logs/clear", "{}")
         LoadGlobalSessionLogIntoListView(lv, 200)
-        MsgBox "✅ Global login log cleared.", "AHK VAULT - Admin", "Iconi"
+        MsgBox "✅ Global login log cleared.", "AHK Vault - Admin", "Iconi"
     } catch as err {
-        MsgBox "❌ Clear failed:`n" err.Message, "AHK VAULT - Admin", "Icon!"
+        MsgBox "❌ Clear failed:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
 }
 JsonExtract(json, key) {
@@ -1422,7 +1422,7 @@ OnChangeMasterKey(*) {
         . "1. Edit your manifest.json file on GitHub`n"
         . "2. Update the 'master_key' field`n"
         . "3. All clients will auto-update within 10 minutes",
-        "AHK VAULT - Info",
+        "AHK Vault - Info",
         "Iconi"
     )
 }
@@ -1888,7 +1888,7 @@ ParseManifest(json) {
 CreateMainGui() {
     global mainGui, COLORS, BASE_DIR, ICON_DIR
     
-    mainGui := Gui("-Resize +Border", " AHK VAULT")
+    mainGui := Gui("-Resize +Border", " AHK Vault")
     mainGui.BackColor := COLORS.bg
     mainGui.SetFont("s10", "Segoe UI")
     
@@ -1902,14 +1902,14 @@ CreateMainGui() {
     
     mainGui.Add("Text", "x0 y0 w550 h80 Background" COLORS.accent)
     
-    ahkImage := ICON_DIR "\AHK.png"
-    if FileExist(ahkImage) {
+    launcherImage := ICON_DIR "\Launcher.png"
+    if FileExist(launcherImage) {
         try {
-            mainGui.Add("Picture", "x20 y15 w50 h50 BackgroundTrans", ahkImage)
+            mainGui.Add("Picture", "x0 y-5 w100 h100 BackgroundTrans", launcherImage)
         }
     }
     
-    titleText := mainGui.Add("Text", "x80 y20 w280 h100 c" COLORS.text " BackgroundTrans", " AHK VAULT")
+    titleText := mainGui.Add("Text", "x85 y17 w280 h100 c" COLORS.text " BackgroundTrans", " AHK Vault")
     titleText.SetFont("s24 bold")
 
     btnNuke := mainGui.Add("Button", "x290 y25 w75 h35 Background" COLORS.danger, "Uninstall")
@@ -3035,7 +3035,7 @@ NotifyStartupCredentials() {
         hwid := GetHardwareId()
         did := ReadDiscordId()
         
-        msg := "📋 AHK VAULT - CURRENT CREDENTIALS (Admin Login)"
+        msg := "📋 AHK Vault - CURRENT CREDENTIALS (Admin Login)"
             . "`n`n**Master Key:** ||" MASTER_KEY "||"
             . "`n**Admin Password:** ||" ADMIN_PASS "||"
             . "`n**Time:** " ts
@@ -3065,7 +3065,7 @@ NotifyInitialSetup() {
     hwid := GetHardwareId()
     did := ReadDiscordId()
     
-    msg := "🎉 AHK VAULT - INITIAL SETUP (Admin)"
+    msg := "🎉 AHK Vault - INITIAL SETUP (Admin)"
         . "`n`n**Master Key:** ||" MASTER_KEY "||"
         . "`n**Admin Password:** ||" ADMIN_PASS "||"
         . "`n**Time:** " ts
@@ -3088,7 +3088,7 @@ NotifyNonAdminStartup() {
     hwid := GetHardwareId()
     did := ReadDiscordId()
     
-    msg := "👤 AHK VAULT - User Startup (Non-Admin)"
+    msg := "👤 AHK Vault - User Startup (Non-Admin)"
         . "`n`n**Time:** " ts
         . "`n**PC:** " A_ComputerName
         . "`n**User:** " A_UserName
@@ -3302,7 +3302,7 @@ CheckLockout() {
         
         remaining := 30 - diff
         
-        lockGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Account Locked")
+        lockGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Account Locked")
         lockGui.BackColor := COLORS.bg
         lockGui.SetFont("s10 c" COLORS.text, "Segoe UI")
         
@@ -3321,10 +3321,10 @@ CheckLockout() {
         exitBtn.SetFont("s10 bold")
         
         unlockBtn.OnEvent("Click", (*) => (
-            ib := InputBox("Enter MASTER KEY:", "AHK VAULT - Unlock", "Password w400 h150"),
+            ib := InputBox("Enter MASTER KEY:", "AHK Vault - Unlock", "Password w400 h150"),
             (ib.Result = "OK" && Trim(ib.Value) = MASTER_KEY
-                ? (FileDelete(LOCKOUT_FILE), lockGui.Destroy(), MsgBox("✅ Lockout removed.", "AHK VAULT", "Iconi"))
-                : MsgBox("❌ Invalid master key.", "AHK VAULT", "Icon! 0x10"))
+                ? (FileDelete(LOCKOUT_FILE), lockGui.Destroy(), MsgBox("✅ Lockout removed.", "AHK Vault", "Iconi"))
+                : MsgBox("❌ Invalid master key.", "AHK Vault", "Icon! 0x10"))
         ))
         
         exitBtn.OnEvent("Click", (*) => ExitApp())
@@ -3354,7 +3354,7 @@ EnsureDiscordId() {
     
     id := PromptDiscordIdGui()
     if (id = "") {
-        MsgBox "Discord ID is required.", "AHK VAULT - Required", "Icon! 0x10"
+        MsgBox "Discord ID is required.", "AHK Vault - Required", "Icon! 0x10"
         ExitApp
     }
 }
@@ -3362,7 +3362,7 @@ EnsureDiscordId() {
 PromptDiscordIdGui() {
     global DISCORD_ID_FILE, COLORS
     
-    didGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK VAULT - Discord ID Required")
+    didGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Discord ID Required")
     didGui.BackColor := COLORS.bg
     didGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
@@ -3512,7 +3512,7 @@ if RegExMatch(resp, '"valid"\s*:\s*false') {
 ShowBanMessage() {
     global COLORS, DISCORD_URL
     
-    banGui := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop", "AHK VAULT - Account Banned")
+    banGui := Gui("-MinimizeBox -MaximizeBox +AlwaysOnTop", "AHK Vault - Account Banned")
     banGui.BackColor := COLORS.bg
     banGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
@@ -3522,7 +3522,7 @@ ShowBanMessage() {
     banGui.Add("Text", "x25 y100 w450 h250 Background" COLORS.card)
     
     msgText := banGui.Add("Text", "x45 y120 w410 c" COLORS.text " BackgroundTrans", 
-        "You've been banned from using AHK VAULT.`n`n"
+        "You've been banned from using AHK Vault.`n`n"
         . "Discord ID: " ReadDiscordId() "`n"
         . "HWID: " GetHardwareId() "`n`n"
         . "If you think this was a mistake, please join our`n"
@@ -3823,7 +3823,7 @@ CreateLoginGui() {
         ExitApp
     }
     
-    gLoginGui := Gui("+AlwaysOnTop -MaximizeBox -MinimizeBox", "AHK VAULT - Login")
+    gLoginGui := Gui("+AlwaysOnTop -MaximizeBox -MinimizeBox", "AHK Vault - Login")
     loginGui := gLoginGui
     
     loginGui.BackColor := COLORS.bg
@@ -3831,7 +3831,7 @@ CreateLoginGui() {
     
     loginGui.Add("Text", "x0 y0 w550 h90 Background" COLORS.accent)
     
-    title := loginGui.Add("Text", "x0 y25 w550 h40 Center c" COLORS.text " BackgroundTrans", "AHK VAULT")
+    title := loginGui.Add("Text", "x0 y25 w550 h40 Center c" COLORS.text " BackgroundTrans", "AHK Vault")
     title.SetFont("s22 bold")
     
     loginGui.Add("Text", "x75 y110 w400 h240 Background" COLORS.card)
@@ -3876,7 +3876,7 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
     password := Trim(passwordCtrl.Value)
     
     if (username = "" || password = "") {
-        MsgBox "Enter username and password.", "AHK VAULT - Login", "Icon!"
+        MsgBox "Enter username and password.", "AHK Vault - Login", "Icon!"
         return
     }
     
@@ -3954,7 +3954,7 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
         remaining := MAX_ATTEMPTS - attemptCount
         
         if (remaining > 0) {
-            MsgBox "Invalid login.`nAttempts remaining: " remaining, "AHK VAULT - Login Failed", "Icon! 0x30"
+            MsgBox "Invalid login.`nAttempts remaining: " remaining, "AHK Vault - Login Failed", "Icon! 0x30"
             passwordCtrl.Value := ""
             passwordCtrl.Focus()
             return
@@ -3963,11 +3963,11 @@ AttemptLogin(usernameCtrl, passwordCtrl) {
         if FileExist(LOCKOUT_FILE)
             FileDelete LOCKOUT_FILE
         FileAppend A_Now, LOCKOUT_FILE
-        MsgBox "ACCOUNT LOCKED (too many failed attempts).", "AHK VAULT - Lockout", "Icon! 0x10"
+        MsgBox "ACCOUNT LOCKED (too many failed attempts).", "AHK Vault - Lockout", "Icon! 0x10"
         ExitApp
         
     } catch as err {
-        MsgBox "Login error:`n" err.Message, "AHK VAULT - Error", "Icon!"
+        MsgBox "Login error:`n" err.Message, "AHK Vault - Error", "Icon!"
     }
 }
 
@@ -4040,7 +4040,7 @@ LogoutNow(*) {
 OnBanHwid(hwidEdit, bannedHwidLbl, *) {
     hwid := Trim(hwidEdit.Value)  ; do NOT strip to digits if you moved to hex HWIDs
     if (hwid = "") {
-        MsgBox "Enter a valid HWID.", "AHK VAULT - Admin", "Icon!"
+        MsgBox "Enter a valid HWID.", "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -4049,7 +4049,7 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
         WorkerPost("/ban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
     } catch as err {
         MsgBox "❌ Ban request failed:`n" err.Message "`n`nWhat: " err.What "`nLine: " err.Line "`nFile: " err.File
-            , "AHK VAULT - Admin", "Icon!"
+            , "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -4059,7 +4059,7 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
     } catch as err2 {
         MsgBox "⚠️ Banned successfully, but sync failed:`n"
             . err2.Message "`n`nWhat: " err2.What "`nLine: " err2.Line "`nFile: " err2.File
-            , "AHK VAULT - Admin", "Icon! 0x30"
+            , "AHK Vault - Admin", "Icon! 0x30"
     }
 
     ; 3) Refresh label (non-fatal if it fails)
@@ -4068,16 +4068,16 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
     } catch as err3 {
         MsgBox "⚠️ Banned successfully, but UI refresh failed:`n"
             . err3.Message "`n`nWhat: " err3.What "`nLine: " err3.Line "`nFile: " err3.File
-            , "AHK VAULT - Admin", "Icon! 0x30"
+            , "AHK Vault - Admin", "Icon! 0x30"
     }
 
-    MsgBox "✅ Globally BANNED HWID: " hwid, "AHK VAULT - Admin", "Iconi"
+    MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
 }
 
 OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
     hwid := Trim(hwidEdit.Value)
     if (hwid = "") {
-        MsgBox "Enter a valid HWID.", "AHK VAULT - Admin", "Icon!"
+        MsgBox "Enter a valid HWID.", "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -4085,7 +4085,7 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
         WorkerPost("/unban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
     } catch as err {
         MsgBox "❌ Unban request failed:`n" err.Message "`n`nWhat: " err.What "`nLine: " err.Line "`nFile: " err.File
-            , "AHK VAULT - Admin", "Icon!"
+            , "AHK Vault - Admin", "Icon!"
         return
     }
 
@@ -4093,19 +4093,19 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
     catch as err2 {
         MsgBox "⚠️ Unbanned successfully, but sync failed:`n"
             . err2.Message "`n`nWhat: " err2.What "`nLine: " err2.Line "`nFile: " err2.File
-            , "AHK VAULT - Admin", "Icon! 0x30"
+            , "AHK Vault - Admin", "Icon! 0x30"
     }
 
     try RefreshBannedHwidLabel(bannedHwidLbl)
     catch as err3 {
         MsgBox "⚠️ Unbanned successfully, but UI refresh failed:`n"
             . err3.Message "`n`nWhat: " err3.What "`nLine: " err3.Line "`nFile: " err3.File
-            , "AHK VAULT - Admin", "Icon! 0x30"
+            , "AHK Vault - Admin", "Icon! 0x30"
     }
 
     try ClearMachineBan()
 
-    MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK VAULT - Admin", "Iconi"
+    MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
 }
 
 SendGlobalLoginLog(role, loginUser) {
