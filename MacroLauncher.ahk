@@ -1277,12 +1277,30 @@ CloseCategory(win) {
 }
 
 LoadRatingsAndRender(win, loadingMsg, category) {
-    try {
-        loadingMsg.Destroy()
-    }
+    global isLoadingRatings
     
-    GetAllRatingsForCategory(category)
-    RenderCards(win)
+    try {
+        ; Try to load ratings (max 5 seconds)
+        success := GetAllRatingsForCategory(category)
+        
+        ; Wait a bit for any pending request
+        waitTime := 0
+        while (isLoadingRatings && waitTime < 5000) {
+            Sleep 100
+            waitTime += 100
+        }
+        
+        ; Remove loading message
+        try loadingMsg.Destroy()
+        
+        ; Render cards regardless of success
+        RenderCards(win)
+        
+    } catch {
+        ; Remove loading message on error
+        try loadingMsg.Destroy()
+        RenderCards(win)
+    }
 }
 
 ChangeSortAndRefresh(win, sortText, category) {
@@ -1775,7 +1793,7 @@ ParseRatingsJSON(json) {
 
 ; NEW: Batch fetch all ratings for a category
 GetAllRatingsForCategory(category) {
-    global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION, isLoadingRatings
+    global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION, isLoadingRatings, WORKER_URL
 
     ; Check if cache is still valid
     if (ratingsCache.Count > 0 && (A_TickCount - ratingsCacheTime) < RATINGS_CACHE_DURATION) {
@@ -1795,37 +1813,53 @@ GetAllRatingsForCategory(category) {
             return false
         }
 
-        ; Build JSON array of paths
+        ; Build JSON array with proper escaping
         pathsJson := "["
         for i, item in macros {
             if (i > 1)
                 pathsJson .= ","
-            pathsJson .= '"' JsonEscape(item.path) '"'
+            ; Use GetMacroKey instead of full path for consistency
+            cleanPath := GetMacroKey(item.path)
+            pathsJson .= '"' cleanPath '"'
         }
         pathsJson .= "]"
 
         body := '{"macro_paths":' pathsJson '}'
-        respText := WorkerPost("/ratings/batch", body)
-
-        resp := JsonLoad(respText)
-
-        ; Expect: { "ratings": { "key": { "upvotes": n, "downvotes": n }, ... } }
-        if !resp.HasOwnProperty("ratings") {
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(5000, 5000, 5000, 5000)  ; Shorter timeouts
+        
+        url := RTrim(WORKER_URL, "/") "/ratings/batch"
+        req.Open("POST", url, false)
+        req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
+        req.Send(body)
+        
+        status := 0
+        try status := req.Status
+        
+        if (status != 200) {
             isLoadingRatings := false
             return false
         }
-
+        
+        respText := req.ResponseText
+        
+        ; Simple JSON parsing for ratings
         newCache := Map()
-
-        ; COM JS object enumeration
-        ratingsObj := resp.ratings
-        enum := ComObjGet(ratingsObj)._NewEnum()
-        while enum(&k, &v) {
-            ; v is the nested object {upvotes, downvotes}
-            up := 0, down := 0
-            try up := Integer(v.upvotes)
-            try down := Integer(v.downvotes)
-            newCache[k] := { upvotes: up, downvotes: down }
+        
+        ; Find all rating entries in the response
+        pos := 1
+        while (pos := RegExMatch(respText, 's)"([^"]+)"\s*:\s*\{\s*"upvotes"\s*:\s*(\d+)\s*,\s*"downvotes"\s*:\s*(\d+)', &match, pos)) {
+            key := match[1]
+            upvotes := Integer(match[2])
+            downvotes := Integer(match[3])
+            
+            newCache[key] := {
+                upvotes: upvotes,
+                downvotes: downvotes
+            }
+            
+            pos := match.Pos + match.Len
         }
 
         ratingsCache := newCache
@@ -1833,13 +1867,12 @@ GetAllRatingsForCategory(category) {
         isLoadingRatings := false
         return true
 
-    } catch {
+    } catch as err {
         isLoadingRatings := false
         return false
     }
 }
 
-; IMPROVED: Get cached rating or return offline defaults
 GetMacroRating(macroPath) {
     global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION
     
@@ -1858,13 +1891,12 @@ GetMacroRating(macroPath) {
     }
 }
 
-; IMPROVED: Submit rating with confirmation and better error handling
 SubmitMacroRating(macroPath, vote) {
-    global macroRatings, ratingsCache
+    global macroRatings, ratingsCache, WORKER_URL
 
     key := GetMacroKey(macroPath)
 
-    ; Check if user wants to change their vote
+    ; Check existing vote
     if macroRatings.Has(key) && macroRatings[key].HasProp("userVote") && macroRatings[key].userVote != "" {
         currentVote := macroRatings[key].userVote
 
@@ -1873,13 +1905,11 @@ SubmitMacroRating(macroPath, vote) {
             return false
         }
 
-        ; Ask for confirmation to change vote
         newVoteIcon := vote = "up" ? "👍" : "👎"
         oldVoteIcon := currentVote = "up" ? "👍" : "👎"
 
         result := MsgBox(
-            "Change your vote from " oldVoteIcon " to " newVoteIcon "?`n`n"
-            "This will remove your previous vote and add the new one.",
+            "Change your vote from " oldVoteIcon " to " newVoteIcon "?",
             "Change Vote",
             "YesNo Iconi"
         )
@@ -1889,40 +1919,49 @@ SubmitMacroRating(macroPath, vote) {
     }
 
     try {
-        ; POST to Cloudflare Worker endpoint
-        body := '{"macro_path":"' JsonEscape(macroPath) '","vote":"' vote '"}'
-        respText := WorkerPost("/ratings/vote", body)
-
-        ; Parse JSON response robustly
-        resp := JsonLoad(respText)
-
-        ; Update cache immediately if present
-        if (resp.HasOwnProperty("upvotes") && resp.HasOwnProperty("downvotes")) {
-            ratingsCache[key] := {
-                upvotes: Integer(resp.upvotes),
-                downvotes: Integer(resp.downvotes)
-            }
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(5000, 5000, 5000, 5000)
+        
+        url := RTrim(WORKER_URL, "/") "/ratings/vote"
+        ; Use the key instead of full path
+        body := '{"macro_path":"' key '","vote":"' vote '"}'
+        
+        req.Open("POST", url, false)
+        req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
+        req.Send(body)
+        
+        status := 0
+        try status := req.Status
+        
+        if (status < 200 || status >= 300) {
+            throw Error("Server returned status " status)
+        }
+        
+        respText := req.ResponseText
+        
+        ; Parse response
+        upvotes := 0
+        downvotes := 0
+        
+        if RegExMatch(respText, '"upvotes"\s*:\s*(\d+)', &m1)
+            upvotes := Integer(m1[1])
+        if RegExMatch(respText, '"downvotes"\s*:\s*(\d+)', &m2)
+            downvotes := Integer(m2[1])
+        
+        ; Update cache with key
+        ratingsCache[key] := {
+            upvotes: upvotes,
+            downvotes: downvotes
         }
 
-        ; Save user's vote locally
+        ; Save user's vote
         macroRatings[key] := { userVote: vote }
         SaveRatings()
 
         return true
+        
     } catch as err {
-        ; Better error message
-        errorMsg := "Unable to submit your vote.`n`n"
-
-        if InStr(err.Message, "Worker error") {
-            errorMsg .= "The rating server rejected the request or is offline.`n`n"
-            errorMsg .= err.Message
-        } else if InStr(err.Message, "timeout") {
-            errorMsg .= "Connection timed out.`nPlease check your internet connection."
-        } else {
-            errorMsg .= "Error: " err.Message
-        }
-
-        MsgBox errorMsg, "Vote Failed", "Icon!"
+        MsgBox "Unable to submit vote: " err.Message "`n`nThe rating server may be offline.", "Vote Failed", "Icon!"
         return false
     }
 }
@@ -1964,6 +2003,7 @@ RefreshRatingsInBackground(category) {
     try {
         GetAllRatingsForCategory(category)
     } catch {
+        ; Silent fail for background refresh
     }
 }
 
@@ -2259,7 +2299,6 @@ JsonDump(obj) {
 }
 
 JsonEscape(s) {
-    ; Keep your original escape behavior (fine for composing small JSON strings)
     s := StrReplace(s, "\", "\\")
     s := StrReplace(s, '"', '\"')
     s := StrReplace(s, "`r", "")
