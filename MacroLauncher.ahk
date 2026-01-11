@@ -1,5 +1,6 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
+#NoTrayIcon
 
 global LAUNCHER_VERSION := "2.1.0"
 
@@ -1775,72 +1776,67 @@ ParseRatingsJSON(json) {
 ; NEW: Batch fetch all ratings for a category
 GetAllRatingsForCategory(category) {
     global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION, isLoadingRatings
-    
+
     ; Check if cache is still valid
     if (ratingsCache.Count > 0 && (A_TickCount - ratingsCacheTime) < RATINGS_CACHE_DURATION) {
         return true
     }
-    
+
     ; Prevent multiple simultaneous requests
     if isLoadingRatings
         return false
-    
+
     isLoadingRatings := true
-    
+
     try {
-        ; Get all macro paths for this category
         macros := GetMacrosWithInfo(category)
         if (macros.Length = 0) {
             isLoadingRatings := false
             return false
         }
-        
-        ; Build array of paths for batch request
-        paths := []
-        for item in macros {
-            paths.Push(item.path)
-        }
-        
-        ; Create JSON array of paths
+
+        ; Build JSON array of paths
         pathsJson := "["
-        for i, path in paths {
+        for i, item in macros {
             if (i > 1)
                 pathsJson .= ","
-            pathsJson .= '"' JsonEscape(path) '"'
+            pathsJson .= '"' JsonEscape(item.path) '"'
         }
         pathsJson .= "]"
-        
+
         body := '{"macro_paths":' pathsJson '}'
-        resp := WorkerPost("/ratings/batch", body)
-        
-        ; Parse response and cache it
-        if RegExMatch(resp, '"ratings"\s*:\s*{([^}]+)}', &m) {
-            ratingsCache := Map()
-            
-            ; Parse each rating entry
-            ratingsBlock := m[1]
-            pos := 1
-            while (pos := RegExMatch(ratingsBlock, '"([^"]+)"\s*:\s*{\s*"upvotes"\s*:\s*(\d+)\s*,\s*"downvotes"\s*:\s*(\d+)\s*}', &rm, pos)) {
-                key := rm[1]
-                ratingsCache[key] := {
-                    upvotes: Integer(rm[2]),
-                    downvotes: Integer(rm[3])
-                }
-                pos += StrLen(rm[0])
-            }
-            
-            ratingsCacheTime := A_TickCount
+        respText := WorkerPost("/ratings/batch", body)
+
+        resp := JsonLoad(respText)
+
+        ; Expect: { "ratings": { "key": { "upvotes": n, "downvotes": n }, ... } }
+        if !resp.HasOwnProperty("ratings") {
             isLoadingRatings := false
-            return true
+            return false
         }
-    } catch as err {
-        ; Failed to fetch - use cached data if available
+
+        newCache := Map()
+
+        ; COM JS object enumeration
+        ratingsObj := resp.ratings
+        enum := ComObjGet(ratingsObj)._NewEnum()
+        while enum(&k, &v) {
+            ; v is the nested object {upvotes, downvotes}
+            up := 0, down := 0
+            try up := Integer(v.upvotes)
+            try down := Integer(v.downvotes)
+            newCache[k] := { upvotes: up, downvotes: down }
+        }
+
+        ratingsCache := newCache
+        ratingsCacheTime := A_TickCount
+        isLoadingRatings := false
+        return true
+
+    } catch {
         isLoadingRatings := false
         return false
     }
-    
-    isLoadingRatings := false
-    return false
 }
 
 ; IMPROVED: Get cached rating or return offline defaults
@@ -1865,67 +1861,67 @@ GetMacroRating(macroPath) {
 ; IMPROVED: Submit rating with confirmation and better error handling
 SubmitMacroRating(macroPath, vote) {
     global macroRatings, ratingsCache
-    
+
     key := GetMacroKey(macroPath)
-    
+
     ; Check if user wants to change their vote
-    if macroRatings.Has(key) && macroRatings[key].userVote != "" {
+    if macroRatings.Has(key) && macroRatings[key].HasProp("userVote") && macroRatings[key].userVote != "" {
         currentVote := macroRatings[key].userVote
-        
+
         if (currentVote = vote) {
             MsgBox "You've already voted " (vote = "up" ? "👍" : "👎") " on this macro!", "Already Voted", "Iconi"
             return false
         }
-        
+
         ; Ask for confirmation to change vote
         newVoteIcon := vote = "up" ? "👍" : "👎"
         oldVoteIcon := currentVote = "up" ? "👍" : "👎"
-        
+
         result := MsgBox(
             "Change your vote from " oldVoteIcon " to " newVoteIcon "?`n`n"
             "This will remove your previous vote and add the new one.",
             "Change Vote",
             "YesNo Iconi"
         )
-        
+
         if (result = "No")
             return false
     }
-    
+
     try {
+        ; POST to Cloudflare Worker endpoint
         body := '{"macro_path":"' JsonEscape(macroPath) '","vote":"' vote '"}'
-        resp := WorkerPost("/ratings/vote", body)
-        
-        ; Parse response to get updated counts
-        if RegExMatch(resp, '"upvotes"\s*:\s*(\d+)', &m1) && RegExMatch(resp, '"downvotes"\s*:\s*(\d+)', &m2) {
-            ; Update cache immediately
+        respText := WorkerPost("/ratings/vote", body)
+
+        ; Parse JSON response robustly
+        resp := JsonLoad(respText)
+
+        ; Update cache immediately if present
+        if (resp.HasOwnProperty("upvotes") && resp.HasOwnProperty("downvotes")) {
             ratingsCache[key] := {
-                upvotes: Integer(m1[1]),
-                downvotes: Integer(m2[1])
+                upvotes: Integer(resp.upvotes),
+                downvotes: Integer(resp.downvotes)
             }
         }
-        
+
         ; Save user's vote locally
-        macroRatings[key] := {
-            userVote: vote
-        }
+        macroRatings[key] := { userVote: vote }
         SaveRatings()
-        
+
         return true
     } catch as err {
         ; Better error message
         errorMsg := "Unable to submit your vote.`n`n"
-        
+
         if InStr(err.Message, "Worker error") {
-            errorMsg .= "The rating server is currently offline.`n"
-            errorMsg .= "Your vote will be saved and synced later."
+            errorMsg .= "The rating server rejected the request or is offline.`n`n"
+            errorMsg .= err.Message
         } else if InStr(err.Message, "timeout") {
-            errorMsg .= "Connection timed out.`n"
-            errorMsg .= "Please check your internet connection."
+            errorMsg .= "Connection timed out.`nPlease check your internet connection."
         } else {
             errorMsg .= "Error: " err.Message
         }
-        
+
         MsgBox errorMsg, "Vote Failed", "Icon!"
         return false
     }
@@ -2247,6 +2243,29 @@ SortByRecent(macros) {
     }
     
     return sorted
+}
+
+JsonLoad(jsonText) {
+    static doc := ComObject("htmlfile")
+    ; Ensure a window exists
+    doc.write("<meta http-equiv='X-UA-Compatible' content='IE=9'>")
+    return doc.parentWindow.JSON.parse(jsonText)
+}
+
+JsonDump(obj) {
+    static doc := ComObject("htmlfile")
+    doc.write("<meta http-equiv='X-UA-Compatible' content='IE=9'>")
+    return doc.parentWindow.JSON.stringify(obj)
+}
+
+JsonEscape(s) {
+    ; Keep your original escape behavior (fine for composing small JSON strings)
+    s := StrReplace(s, "\", "\\")
+    s := StrReplace(s, '"', '\"')
+    s := StrReplace(s, "`r", "")
+    s := StrReplace(s, "`n", "\n")
+    s := StrReplace(s, "`t", "\t")
+    return s
 }
 
 ReadMacroInfo(macroDir) {
@@ -2675,35 +2694,42 @@ GenerateRandomKey(length := 32) {
     return key
 }
 
-JsonEscape(s) {
-    s := StrReplace(s, "\", "\\")
-    s := StrReplace(s, '"', '\"')
-    s := StrReplace(s, "`r", "")
-    s := StrReplace(s, "`n", "\n")
-    s := StrReplace(s, "`t", "\t")
-    return s
-}
-
 WorkerPost(endpoint, bodyJson) {
     global WORKER_URL, MASTER_KEY
-    
+
+    if !IsSet(WORKER_URL) || (Trim(WORKER_URL) = "")
+        throw Error("WORKER_URL is not set.")
+    if !IsSet(MASTER_KEY) || (Trim(MASTER_KEY) = "")
+        throw Error("MASTER_KEY is not set.")
+
     url := RTrim(WORKER_URL, "/") "/" LTrim(endpoint, "/")
-    
+
     req := ComObject("WinHttp.WinHttpRequest.5.1")
-    req.Option[6] := 1
+
+    ; IMPORTANT: Do NOT set req.Option[6] unless you know the correct protocol bitmask.
+    ; req.Option[6] := 1 breaks TLS on many systems.
+
+    ; timeouts: resolve, connect, send, receive (ms)
     req.SetTimeouts(15000, 15000, 15000, 15000)
+
     req.Open("POST", url, false)
-    req.SetRequestHeader("Content-Type", "application/json")
+    req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
+    req.SetRequestHeader("Accept", "application/json")
     req.SetRequestHeader("X-Master-Key", MASTER_KEY)
     req.SetRequestHeader("User-Agent", "v1ln-clan")
+
+    ; Send body
     req.Send(bodyJson)
-    
-    status := req.Status
+
+    status := 0
     resp := ""
+    try status := req.Status
     try resp := req.ResponseText
-    
-    if (status < 200 || status >= 300)
+
+    if (status < 200 || status >= 300) {
+        ; include response body for debugging Worker errors
         throw Error("Worker error " status ": " resp)
+    }
     return resp
 }
 
