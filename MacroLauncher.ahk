@@ -44,13 +44,6 @@ global ICON_DIR := SECURE_VAULT "\res"
 global MANIFEST_URL := DecryptManifestUrl()
 global mainGui := 0
 global MACHINE_KEY := ""
-global RATINGS_FILE := ""
-global macroRatings := Map()
-global ratingsCache := Map()
-global ratingsCacheTime := 0
-global RATINGS_CACHE_DURATION := 30000
-global isLoadingRatings := false
-global ratingsRefreshTimer := 0
 
 global COLORS := {
     bg: "0x0a0e14",
@@ -83,7 +76,6 @@ InitializeSecureVault()
 SetTaskbarIcon()
 LoadStats()
 LoadFavorities()
-LoadRatings()
 CheckForUpdatesPrompt()
 CreateMainGui()
 
@@ -100,11 +92,12 @@ CreateGUID() {
 ; ========== INITIALIZATION ==========
 InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
-    global STATS_FILE, FAVORITES_FILE, MANIFEST_URL, RATINGS_FILE
+    global STATS_FILE, FAVORITES_FILE, MANIFEST_URL
     global DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
     
     MACHINE_KEY := GetOrCreatePersistentKey()
-    
+    HWID_BAN_FILE := SECURE_VAULT "\banned_hwids.txt"
+    DISCORD_ID_FILE := SECURE_VAULT "\discord_id.txt"
     dirHash := HashString(MACHINE_KEY . A_ComputerName)
     APP_DIR := A_AppData "\..\LocalLow\Microsoft\CryptNetUrlCache\Content\{" SubStr(dirHash, 1, 8) "}"
     SECURE_VAULT := APP_DIR "\{" SubStr(dirHash, 9, 8) "}"
@@ -113,7 +106,6 @@ InitializeSecureVault() {
     VERSION_FILE := SECURE_VAULT "\~ver.tmp"
     STATS_FILE := SECURE_VAULT "\stats.json"
     FAVORITES_FILE := SECURE_VAULT "\favorites.json"
-    RATINGS_FILE := SECURE_VAULT "\ratings.json"
     MANIFEST_URL := DecryptManifestUrl()
     
     DISCORD_BAN_FILE := SECURE_VAULT "\banned_discord_ids.txt"
@@ -1241,7 +1233,7 @@ OpenCategory(category) {
     
     backBtn := win.Add("Button", "x20 y25 w70 h35 Background" COLORS.accentHover, "← Back")
     backBtn.SetFont("s10")
-    backBtn.OnEvent("Click", (*) => CloseCategory(win))
+    backBtn.OnEvent("Click", (*) => win.Destroy())
     
     title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", category)
     title.SetFont("s22 bold")
@@ -1257,50 +1249,8 @@ OpenCategory(category) {
     
     win.__scrollY := 110
     
-    win.OnEvent("Close", (*) => CloseCategory(win))
-    
-    ; Show loading message
-    loadingMsg := win.Add("Text", "x25 y300 w700 h50 c" COLORS.textDim " Center", "Loading ratings...")
-    loadingMsg.SetFont("s12")
+    RenderCards(win)
     win.Show("w750 h640 Center")
-    
-    ; Fetch ratings in background
-    SetTimer () => LoadRatingsAndRender(win, loadingMsg, category), -100
-    
-    ; Start auto-refresh
-    StartRatingsAutoRefresh(category)
-}
-
-CloseCategory(win) {
-    StopRatingsAutoRefresh()
-    win.Destroy()
-}
-
-LoadRatingsAndRender(win, loadingMsg, category) {
-    global isLoadingRatings
-    
-    try {
-        ; Try to load ratings (max 5 seconds)
-        success := GetAllRatingsForCategory(category)
-        
-        ; Wait a bit for any pending request
-        waitTime := 0
-        while (isLoadingRatings && waitTime < 5000) {
-            Sleep 100
-            waitTime += 100
-        }
-        
-        ; Remove loading message
-        try loadingMsg.Destroy()
-        
-        ; Render cards regardless of success
-        RenderCards(win)
-        
-    } catch {
-        ; Remove loading message on error
-        try loadingMsg.Destroy()
-        RenderCards(win)
-    }
 }
 
 ChangeSortAndRefresh(win, sortText, category) {
@@ -1326,14 +1276,7 @@ OpenCategoryWithSort(category, sortBy := "favorites") {
     macros := GetMacrosWithInfo(category, sortBy)
     
     if (macros.Length = 0) {
-        MsgBox(
-            "No macros found in '" category "'`n`n"
-            "To add macros:`n"
-            "1. Create a 'Main.ahk' file in each subfolder`n"
-            "2. Or run the update to download macros",
-            "No Macros",
-            "Iconi"
-        )
+        MsgBox("No macros found in '" category "'", "No Macros", "Iconi")
         return
     }
     
@@ -1360,7 +1303,7 @@ OpenCategoryWithSort(category, sortBy := "favorites") {
     
     backBtn := win.Add("Button", "x20 y25 w70 h35 Background" COLORS.accentHover, "← Back")
     backBtn.SetFont("s10")
-    backBtn.OnEvent("Click", (*) => CloseCategory(win))
+    backBtn.OnEvent("Click", (*) => win.Destroy())
     
     title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", category)
     title.SetFont("s22 bold")
@@ -1385,18 +1328,8 @@ OpenCategoryWithSort(category, sortBy := "favorites") {
     
     win.__scrollY := 110
     
-    win.OnEvent("Close", (*) => CloseCategory(win))
-    
-    ; Show loading message
-    loadingMsg := win.Add("Text", "x25 y300 w700 h50 c" COLORS.textDim " Center", "Loading ratings...")
-    loadingMsg.SetFont("s12")
+    RenderCards(win)
     win.Show("w750 h640 Center")
-    
-    ; Fetch ratings in background
-    SetTimer () => LoadRatingsAndRender(win, loadingMsg, category), -100
-    
-    ; Start auto-refresh
-    StartRatingsAutoRefresh(category)
 }
 
 RenderCards(win) {
@@ -1530,47 +1463,8 @@ CreateFullWidthCard(win, item, x, y, w, h) {
         win.__cards.Push(runCountCtrl)
     }
     
-    ; Add ratings display with percentage
-    currentPath := item.path
-    ratings := GetMacroRating(currentPath)
-    userVote := GetUserVote(currentPath)
-    
-    ; Show offline indicator if ratings failed to load
-    isOffline := ratings.HasProp("offline") && ratings.offline
-    
-    ; Thumbs up button
-    upColor := (userVote = "up") ? COLORS.success : COLORS.cardHover
-    upBtn := win.Add("Button", "x" (x + w - 350) " y" (y + 20) " w35 h35 Background" upColor, "👍")
-    upBtn.SetFont("s16")
-    if !isOffline
-        upBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "up"))
-    win.__cards.Push(upBtn)
-    
-    upCountCtrl := win.Add("Text", "x" (x + w - 310) " y" (y + 25) " w40 h25 c" COLORS.text " BackgroundTrans Center", ratings.upvotes)
-    upCountCtrl.SetFont("s11 bold")
-    win.__cards.Push(upCountCtrl)
-    
-    ; Thumbs down button
-    downColor := (userVote = "down") ? COLORS.danger : COLORS.cardHover
-    downBtn := win.Add("Button", "x" (x + w - 265) " y" (y + 20) " w35 h35 Background" downColor, "👎")
-    downBtn.SetFont("s16")
-    if !isOffline
-        downBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "down"))
-    win.__cards.Push(downBtn)
-    
-    downCountCtrl := win.Add("Text", "x" (x + w - 225) " y" (y + 25) " w40 h25 c" COLORS.text " BackgroundTrans Center", ratings.downvotes)
-    downCountCtrl.SetFont("s11 bold")
-    win.__cards.Push(downCountCtrl)
-    
-    ; Show percentage
-    percentage := GetRatingPercentage(ratings.upvotes, ratings.downvotes)
-    percentColor := isOffline ? COLORS.danger : COLORS.textDim
-    percentCtrl := win.Add("Text", "x" (x + w - 350) " y" (y + 60) " w160 h20 c" percentColor " BackgroundTrans Center", isOffline ? "⚠ Offline" : percentage)
-    percentCtrl.SetFont("s9")
-    win.__cards.Push(percentCtrl)
-    
-    ; Favorite button
-    isFav := IsFavorite(currentPath)
+currentPath := item.path
+isFav := IsFavorite(currentPath)
 favBtn := win.Add(
     "Button",
     "x" (x + w - 145)
@@ -1641,46 +1535,7 @@ CreateGridCard(win, item, x, y, w, h) {
         win.__cards.Push(runCountCtrl)
     }
     
-    ; Add ratings display
     currentPath := item.path
-    ratings := GetMacroRating(currentPath)
-    userVote := GetUserVote(currentPath)
-    
-    isOffline := ratings.HasProp("offline") && ratings.offline
-    
-    ; Thumbs up button
-    upColor := (userVote = "up") ? COLORS.success : COLORS.cardHover
-    upBtn := win.Add("Button", "x" (x + 15) " y" (y + 83) " w28 h22 Background" upColor, "👍")
-    upBtn.SetFont("s11")
-    if !isOffline
-        upBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "up"))
-    win.__cards.Push(upBtn)
-    
-    upCountCtrl := win.Add("Text", "x" (x + 48) " y" (y + 86) " w30 h18 c" COLORS.text " BackgroundTrans Center", ratings.upvotes)
-    upCountCtrl.SetFont("s9 bold")
-    win.__cards.Push(upCountCtrl)
-    
-    ; Thumbs down button
-    downColor := (userVote = "down") ? COLORS.danger : COLORS.cardHover
-    downBtn := win.Add("Button", "x" (x + 83) " y" (y + 83) " w28 h22 Background" downColor, "👎")
-    downBtn.SetFont("s11")
-    if !isOffline
-        downBtn.OnEvent("Click", (*) => VoteAndRefresh(win, currentPath, "down"))
-    win.__cards.Push(downBtn)
-    
-    downCountCtrl := win.Add("Text", "x" (x + 116) " y" (y + 86) " w30 h18 c" COLORS.text " BackgroundTrans Center", ratings.downvotes)
-    downCountCtrl.SetFont("s9 bold")
-    win.__cards.Push(downCountCtrl)
-    
-    ; Show percentage or offline status
-    percentage := GetRatingPercentage(ratings.upvotes, ratings.downvotes)
-    percentColor := isOffline ? COLORS.danger : COLORS.textDim
-    percentText := isOffline ? "⚠" : (ratings.upvotes + ratings.downvotes > 0 ? Round((ratings.upvotes / (ratings.upvotes + ratings.downvotes)) * 100) "%" : "-")
-    percentCtrl := win.Add("Text", "x" (x + 155) " y" (y + 86) " w40 h18 c" percentColor " BackgroundTrans Center", percentText)
-    percentCtrl.SetFont("s8 bold")
-    win.__cards.Push(percentCtrl)
-    
-    ; Favorite button - top right
     isFav := IsFavorite(currentPath)
 favBtn := win.Add(
     "Button",
@@ -1708,322 +1563,6 @@ win.__cards.Push(favBtn)
         linksBtn.OnEvent("Click", (*) => OpenLinks(currentLinks))
         win.__cards.Push(linksBtn)
     }
-}
-
-LoadRatings() {
-    global macroRatings, RATINGS_FILE
-    
-    if !FileExist(RATINGS_FILE) {
-        macroRatings := Map()
-        return
-    }
-    
-    try {
-        json := FileRead(RATINGS_FILE, "UTF-8")
-        parsed := ParseRatingsJSON(json)
-        if parsed
-            macroRatings := parsed
-        else
-            macroRatings := Map()
-    } catch {
-        macroRatings := Map()
-    }
-}
-
-SaveRatings() {
-    global macroRatings, RATINGS_FILE
-    
-    try {
-        json := RatingsToJSON(macroRatings)
-        if FileExist(RATINGS_FILE)
-            FileDelete RATINGS_FILE
-        FileAppend json, RATINGS_FILE, "UTF-8"
-    } catch {
-    }
-}
-
-RatingsToJSON(ratingsMap) {
-    if ratingsMap.Count = 0
-        return "{}"
-    
-    pairs := []
-    for key, data in ratingsMap {
-        keyStr := EscapeJSON(key)
-        userVote := EscapeJSON(data.userVote)
-        
-        pairs.Push('"' keyStr '":{"userVote":"' userVote '"}')
-    }
-    
-    return "{" StrJoin(pairs, ",") "}"
-}
-
-ParseRatingsJSON(json) {
-    result := Map()
-    
-    if !json || json = "{}"
-        return result
-    
-    try {
-        content := Trim(SubStr(json, 2, StrLen(json) - 2))
-        entries := SplitTopLevel(content)
-        
-        for entry in entries {
-            if !InStr(entry, ":")
-                continue
-            
-            if !RegExMatch(entry, '"([^"]+)":\s*{', &m)
-                continue
-            
-            key := m[1]
-            userVote := ""
-            
-            if RegExMatch(entry, '"userVote"\s*:\s*"([^"]+)"', &m2)
-                userVote := m2[1]
-            
-            result[key] := {
-                userVote: userVote
-            }
-        }
-    } catch {
-        return Map()
-    }
-    
-    return result
-}
-
-; NEW: Batch fetch all ratings for a category
-GetAllRatingsForCategory(category) {
-    global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION, isLoadingRatings, WORKER_URL
-
-    ; Check if cache is still valid
-    if (ratingsCache.Count > 0 && (A_TickCount - ratingsCacheTime) < RATINGS_CACHE_DURATION) {
-        return true
-    }
-
-    ; Prevent multiple simultaneous requests
-    if isLoadingRatings
-        return false
-
-    isLoadingRatings := true
-
-    try {
-        macros := GetMacrosWithInfo(category)
-        if (macros.Length = 0) {
-            isLoadingRatings := false
-            return false
-        }
-
-        ; Build JSON array with proper escaping
-        pathsJson := "["
-        for i, item in macros {
-            if (i > 1)
-                pathsJson .= ","
-            ; Use GetMacroKey instead of full path for consistency
-            cleanPath := GetMacroKey(item.path)
-            pathsJson .= '"' cleanPath '"'
-        }
-        pathsJson .= "]"
-
-        body := '{"macro_paths":' pathsJson '}'
-        
-        req := ComObject("WinHttp.WinHttpRequest.5.1")
-        req.SetTimeouts(5000, 5000, 5000, 5000)  ; Shorter timeouts
-        
-        url := RTrim(WORKER_URL, "/") "/ratings/batch"
-        req.Open("POST", url, false)
-        req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
-        req.Send(body)
-        
-        status := 0
-        try status := req.Status
-        
-        if (status != 200) {
-            isLoadingRatings := false
-            return false
-        }
-        
-        respText := req.ResponseText
-        
-        ; Simple JSON parsing for ratings
-        newCache := Map()
-        
-        ; Find all rating entries in the response
-        pos := 1
-        while (pos := RegExMatch(respText, 's)"([^"]+)"\s*:\s*\{\s*"upvotes"\s*:\s*(\d+)\s*,\s*"downvotes"\s*:\s*(\d+)', &match, pos)) {
-            key := match[1]
-            upvotes := Integer(match[2])
-            downvotes := Integer(match[3])
-            
-            newCache[key] := {
-                upvotes: upvotes,
-                downvotes: downvotes
-            }
-            
-            pos := match.Pos + match.Len
-        }
-
-        ratingsCache := newCache
-        ratingsCacheTime := A_TickCount
-        isLoadingRatings := false
-        return true
-
-    } catch as err {
-        isLoadingRatings := false
-        return false
-    }
-}
-
-GetMacroRating(macroPath) {
-    global ratingsCache, ratingsCacheTime, RATINGS_CACHE_DURATION
-    
-    key := GetMacroKey(macroPath)
-    
-    ; Return cached rating if available and fresh
-    if ratingsCache.Has(key) && ((A_TickCount - ratingsCacheTime) < RATINGS_CACHE_DURATION) {
-        return ratingsCache[key]
-    }
-    
-    ; Return offline indicator
-    return {
-        upvotes: 0,
-        downvotes: 0,
-        offline: true
-    }
-}
-
-SubmitMacroRating(macroPath, vote) {
-    global macroRatings, ratingsCache, WORKER_URL
-
-    key := GetMacroKey(macroPath)
-
-    ; Check existing vote
-    if macroRatings.Has(key) && macroRatings[key].HasProp("userVote") && macroRatings[key].userVote != "" {
-        currentVote := macroRatings[key].userVote
-
-        if (currentVote = vote) {
-            MsgBox "You've already voted " (vote = "up" ? "👍" : "👎") " on this macro!", "Already Voted", "Iconi"
-            return false
-        }
-
-        newVoteIcon := vote = "up" ? "👍" : "👎"
-        oldVoteIcon := currentVote = "up" ? "👍" : "👎"
-
-        result := MsgBox(
-            "Change your vote from " oldVoteIcon " to " newVoteIcon "?",
-            "Change Vote",
-            "YesNo Iconi"
-        )
-
-        if (result = "No")
-            return false
-    }
-
-    try {
-        req := ComObject("WinHttp.WinHttpRequest.5.1")
-        req.SetTimeouts(5000, 5000, 5000, 5000)
-        
-        url := RTrim(WORKER_URL, "/") "/ratings/vote"
-        ; Use the key instead of full path
-        body := '{"macro_path":"' key '","vote":"' vote '"}'
-        
-        req.Open("POST", url, false)
-        req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
-        req.Send(body)
-        
-        status := 0
-        try status := req.Status
-        
-        if (status < 200 || status >= 300) {
-            throw Error("Server returned status " status)
-        }
-        
-        respText := req.ResponseText
-        
-        ; Parse response
-        upvotes := 0
-        downvotes := 0
-        
-        if RegExMatch(respText, '"upvotes"\s*:\s*(\d+)', &m1)
-            upvotes := Integer(m1[1])
-        if RegExMatch(respText, '"downvotes"\s*:\s*(\d+)', &m2)
-            downvotes := Integer(m2[1])
-        
-        ; Update cache with key
-        ratingsCache[key] := {
-            upvotes: upvotes,
-            downvotes: downvotes
-        }
-
-        ; Save user's vote
-        macroRatings[key] := { userVote: vote }
-        SaveRatings()
-
-        return true
-        
-    } catch as err {
-        MsgBox "Unable to submit vote: " err.Message "`n`nThe rating server may be offline.", "Vote Failed", "Icon!"
-        return false
-    }
-}
-
-GetUserVote(macroPath) {
-    global macroRatings
-    key := GetMacroKey(macroPath)
-    
-    if macroRatings.Has(key)
-        return macroRatings[key].userVote
-    
-    return ""
-}
-
-; NEW: Calculate rating percentage
-GetRatingPercentage(upvotes, downvotes) {
-    total := upvotes + downvotes
-    if (total = 0)
-        return "No votes"
-    
-    percentage := Round((upvotes / total) * 100)
-    return percentage "% positive"
-}
-
-; NEW: Start auto-refresh timer
-StartRatingsAutoRefresh(category) {
-    global ratingsRefreshTimer, RATINGS_CACHE_DURATION
-    
-    if ratingsRefreshTimer
-        SetTimer ratingsRefreshTimer, 0
-    
-    ratingsRefreshTimer := () => RefreshRatingsInBackground(category)
-    SetTimer ratingsRefreshTimer, RATINGS_CACHE_DURATION
-}
-
-RefreshRatingsInBackground(category) {
-    global ratingsCache
-    
-    try {
-        GetAllRatingsForCategory(category)
-    } catch {
-        ; Silent fail for background refresh
-    }
-}
-
-StopRatingsAutoRefresh() {
-    global ratingsRefreshTimer
-    
-    if ratingsRefreshTimer {
-        SetTimer ratingsRefreshTimer, 0
-        ratingsRefreshTimer := 0
-    }
-}
-
-VoteAndRefresh(win, macroPath, vote) {
-    if SubmitMacroRating(macroPath, vote) {
-        UpdateSingleCardRating(win, macroPath)
-    }
-}
-
-UpdateSingleCardRating(win, macroPath) {
-    RenderCards(win)
 }
 
 ToggleFavoriteAndRefresh(win, macroPath) {
@@ -2802,7 +2341,7 @@ WriteLinesToFile(path, arr) {
 }
 
 ResyncListsFromManifestNow() {
-    global MANIFEST_URL, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
+    global MANIFEST_URL, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE, HWID_BAN_FILE
 
     tmp := A_Temp "\manifest_live.json"
 
@@ -2817,13 +2356,15 @@ ResyncListsFromManifestNow() {
 
     OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
     OverwriteListFile(ADMIN_DISCORD_FILE, lists.admins)
+    OverwriteListFile(HWID_BAN_FILE, lists.banned_hwids)
 
     return lists
 }
 
 ParseManifestLists(json) {
-    obj := { banned: [], admins: [] }
+    obj := { banned: [], admins: [], banned_hwids: [] }
 
+    ; banned_discord_ids
     if RegExMatch(json, '(?s)"banned_discord_ids"\s*:\s*\[(.*?)\]', &m1) {
         inner := m1[1]
         pos := 1
@@ -2833,12 +2374,25 @@ ParseManifestLists(json) {
         }
     }
 
+    ; admin_discord_ids
     if RegExMatch(json, '(?s)"admin_discord_ids"\s*:\s*\[(.*?)\]', &m2) {
         inner := m2[1]
         pos := 1
         while (pos := RegExMatch(inner, '"(\d{6,30})"', &mItem2, pos)) {
             obj.admins.Push(mItem2[1])
             pos += StrLen(mItem2[0])
+        }
+    }
+
+    ; banned_hwids
+    if RegExMatch(json, '(?s)"banned_hwids"\s*:\s*\[(.*?)\]', &m3) {
+        inner := m3[1]
+        pos := 1
+        while (pos := RegExMatch(inner, '"([^"]+)"', &mItem3, pos)) {
+            v := Trim(mItem3[1])
+            if (v != "")
+                obj.banned_hwids.Push(v)
+            pos += StrLen(mItem3[0])
         }
     }
 
@@ -2885,45 +2439,83 @@ AdminPanel(*) {
     adminGui.Add("Text", "x0 y0 w900 h70 Background" COLORS.accent)
     adminGui.Add("Text", "x20 y20 w860 h30 c" COLORS.text " BackgroundTrans", "Admin Panel").SetFont("s18 bold")
     
-    adminGui.Add("Text", "x10 y85 w880 c" COLORS.textDim, "🔒 Global Ban Management")
+    ; ===== LOGIN LOG =====
+    adminGui.Add("Text", "x10 y85 w880 c" COLORS.textDim, "✅ Login Log (successful logins)")
+    lv := adminGui.Add("ListView"
+        , "x10 y105 w880 h210 Background" COLORS.card " c" COLORS.text
+        , ["Time", "PC Name", "Discord ID", "Role", "HWID"])
+    LoadGlobalSessionLogIntoListView(lv, 200)
+
+    adminGui.Add("Text", "x10 y325 w880 h1 Background" COLORS.border)
     
-    adminGui.Add("Text", "x10 y110 w120 c" COLORS.text, "Discord ID:")
-    banEdit := adminGui.Add("Edit", "x130 y106 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
+    ; ===== DISCORD BAN =====
+    adminGui.Add("Text", "x10 y335 w880 c" COLORS.textDim, "🔒 Global Ban Management")
     
-    banBtn := adminGui.Add("Button", "x520 y106 w110 h28 Background" COLORS.danger, "BAN")
-    unbanBtn := adminGui.Add("Button", "x640 y106 w110 h28 Background" COLORS.success, "UNBAN")
+    adminGui.Add("Text", "x10 y360 w120 c" COLORS.text, "Discord ID:")
+    banEdit := adminGui.Add("Edit", "x130 y356 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
     
-    bannedLbl := adminGui.Add("Text", "x10 y140 w880 c" COLORS.textDim, "")
+    banBtn := adminGui.Add("Button", "x520 y356 w110 h28 Background" COLORS.danger, "BAN")
+    unbanBtn := adminGui.Add("Button", "x640 y356 w110 h28 Background" COLORS.success, "UNBAN")
+    
+    bannedLbl := adminGui.Add("Text", "x10 y390 w880 c" COLORS.textDim, "")
     RefreshBannedFromServer(bannedLbl)
     
-    adminGui.Add("Text", "x10 y170 w880 h1 Background" COLORS.border)
+    ; ===== HWID BAN =====
+    adminGui.Add("Text", "x10 y420 w120 c" COLORS.text, "HWID:")
+    hwidEdit := adminGui.Add("Edit", "x130 y416 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
+    hwidEdit.Value := Trim(GetHardwareId())
     
-    adminGui.Add("Text", "x10 y180 w880 c" COLORS.textDim, "🛡️ Admin Discord IDs")
+    banHwidBtn := adminGui.Add("Button", "x520 y416 w110 h28 Background" COLORS.danger, "BAN HWID")
+    unbanHwidBtn := adminGui.Add("Button", "x640 y416 w110 h28 Background" COLORS.success, "UNBAN HWID")
     
-    adminGui.Add("Text", "x10 y205 w120 c" COLORS.text, "Admin ID:")
-    adminEdit := adminGui.Add("Edit", "x130 y201 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
+    bannedHwidLbl := adminGui.Add("Text", "x10 y450 w880 c" COLORS.textDim, "")
+    try RefreshBannedHwidLabel(bannedHwidLbl)
     
-    addAdminBtn := adminGui.Add("Button", "x520 y201 w110 h28 Background" COLORS.accentAlt, "Add")
-    delAdminBtn := adminGui.Add("Button", "x640 y201 w110 h28 Background" COLORS.danger, "Remove")
+    adminGui.Add("Text", "x10 y480 w880 h1 Background" COLORS.border)
     
-    adminLbl := adminGui.Add("Text", "x10 y235 w880 c" COLORS.textDim, "")
+    ; ===== ADMIN IDS =====
+    adminGui.Add("Text", "x10 y490 w880 c" COLORS.textDim, "🛡️ Admin Discord IDs")
+    
+    adminGui.Add("Text", "x10 y515 w120 c" COLORS.text, "Admin ID:")
+    adminEdit := adminGui.Add("Edit", "x130 y511 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
+    
+    addAdminBtn := adminGui.Add("Button", "x520 y511 w110 h28 Background" COLORS.accentAlt, "Add")
+    delAdminBtn := adminGui.Add("Button", "x640 y511 w110 h28 Background" COLORS.danger, "Remove")
+    
+    adminLbl := adminGui.Add("Text", "x10 y545 w880 c" COLORS.textDim, "")
     RefreshAdminDiscordLabel(adminLbl)
     
-    adminGui.Add("Text", "x10 y265 w880 h1 Background" COLORS.border)
+    adminGui.Add("Text", "x10 y575 w880 h1 Background" COLORS.border)
     
-    refreshBtn := adminGui.Add("Button", "x10 y280 w150 h34 Background" COLORS.card, "Refresh Lists")
-    refreshBtn.SetFont("s10")
+    ; ===== BUTTONS =====
+    refreshBtn := adminGui.Add("Button", "x10 y590 w130 h34 Background" COLORS.card, "Refresh Log")
+    clearLogBtn := adminGui.Add("Button", "x150 y590 w130 h34 Background" COLORS.card, "Clear Log")
     
+    ; ===== EVENTS =====
     banBtn.OnEvent("Click", OnBanDiscordId.Bind(banEdit, bannedLbl))
     unbanBtn.OnEvent("Click", OnUnbanDiscordId.Bind(banEdit, bannedLbl))
+    
+    banHwidBtn.OnEvent("Click", OnBanHwid.Bind(hwidEdit, bannedHwidLbl))
+    unbanHwidBtn.OnEvent("Click", OnUnbanHwid.Bind(hwidEdit, bannedHwidLbl))
     
     addAdminBtn.OnEvent("Click", OnAddAdminDiscord.Bind(adminEdit, adminLbl))
     delAdminBtn.OnEvent("Click", OnRemoveAdminDiscord.Bind(adminEdit, adminLbl))
     
-    refreshBtn.OnEvent("Click", (*) => (RefreshBannedFromServer(bannedLbl), RefreshAdminDiscordLabel(adminLbl)))
+    refreshBtn.OnEvent("Click", (*) => LoadGlobalSessionLogIntoListView(lv, 200))
+    clearLogBtn.OnEvent("Click", OnClearLog.Bind(lv))
     
     adminGui.OnEvent("Close", (*) => adminGui.Destroy())
-    adminGui.Show("w900 h340 Center")
+    adminGui.Show("w900 h640 Center")
+}
+
+OnClearLog(lv, *) {
+    try {
+        WorkerPost("/logs/clear", "{}")
+        LoadGlobalSessionLogIntoListView(lv, 200)
+        MsgBox "✅ Global login log cleared.", "AHK Vault - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Clear failed:`n" err.Message, "AHK Vault - Admin", "Icon!"
+    }
 }
 
 OnBanDiscordId(banEdit, bannedLbl, *) {
@@ -3130,4 +2722,262 @@ RefreshAdminDiscordLabel(lblCtrl) {
     for id in ids
         s .= id ", "
     lblCtrl.Value := RTrim(s, ", ")
+}
+
+AddBannedHwid(hwid) {
+    global HWID_BAN_FILE
+    hwid := Trim(hwid)
+    if (hwid = "")
+        return
+    ids := GetLinesFromFile(HWID_BAN_FILE)
+    for x in ids
+        if (Trim(x) = hwid)
+            return
+    ids.Push(hwid)
+    WriteLinesToFile(HWID_BAN_FILE, ids)
+}
+
+RemoveBannedHwid(hwid) {
+    global HWID_BAN_FILE
+    ids := []
+    for x in GetLinesFromFile(HWID_BAN_FILE)
+        if (Trim(x) != Trim(hwid))
+            ids.Push(x)
+    WriteLinesToFile(HWID_BAN_FILE, ids)
+}
+
+IsHwidBanned() {
+    global HWID_BAN_FILE
+    if !FileExist(HWID_BAN_FILE)
+        return false
+    hwid := GetHardwareId()
+    for x in GetLinesFromFile(HWID_BAN_FILE)
+        if (Trim(x) = hwid)
+            return true
+    return false
+}
+
+RefreshBannedHwidLabel(lblCtrl) {
+    global HWID_BAN_FILE
+
+    try ResyncListsFromManifestNow()
+    catch
+
+    ids := GetLinesFromFile(HWID_BAN_FILE)
+    if (ids.Length = 0) {
+        lblCtrl.Value := "Banned HWIDs: (none)"
+        return
+    }
+
+    s := "Banned HWIDs: "
+    for id in ids
+        s .= id ", "
+    lblCtrl.Value := RTrim(s, ", ")
+}
+
+OnBanHwid(hwidEdit, bannedHwidLbl, *) {
+    hwid := RegExReplace(Trim(hwidEdit.Value), "[^\d]", "")
+    if (hwid = "") {
+        MsgBox "Enter a valid HWID (numbers only).", "AHK Vault - Admin", "Icon!"
+        return
+    }
+
+    try {
+        resp := WorkerPost("/ban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
+        ResyncListsFromManifestNow()
+        RefreshBannedHwidLabel(bannedHwidLbl)
+        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to ban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
+    }
+}
+
+OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
+    hwid := RegExReplace(Trim(hwidEdit.Value), "[^\d]", "")
+    if (hwid = "") {
+        MsgBox "Enter a valid HWID (numbers only).", "AHK Vault - Admin", "Icon!"
+        return
+    }
+
+    try {
+        resp := WorkerPost("/unban-hwid", '{"hwid":"' JsonEscape(hwid) '"}')
+        ResyncListsFromManifestNow()
+        RefreshBannedHwidLabel(bannedHwidLbl)
+        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to unban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
+    }
+}
+
+GetHardwareId() {
+    hwid := ""
+    
+    try {
+        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
+        for proc in objWMI.ExecQuery("SELECT ProcessorId FROM Win32_Processor") {
+            hwid .= proc.ProcessorId
+            break
+        }
+    } catch {
+    }
+    
+    try {
+        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
+        for board in objWMI.ExecQuery("SELECT SerialNumber FROM Win32_BaseBoard") {
+            hwid .= board.SerialNumber
+            break
+        }
+    } catch {
+    }
+    
+    try {
+        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
+        for bios in objWMI.ExecQuery("SELECT SerialNumber FROM Win32_BIOS") {
+            hwid .= bios.SerialNumber
+            break
+        }
+    } catch {
+    }
+    
+    try {
+        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
+        for disk in objWMI.ExecQuery("SELECT VolumeSerialNumber FROM Win32_LogicalDisk WHERE DeviceID='C:'") {
+            hwid .= disk.VolumeSerialNumber
+            break
+        }
+    } catch {
+    }
+    
+    if (hwid = "") {
+        hwid := A_ComputerName . A_UserName
+    }
+    
+    hash := 0
+    loop parse hwid
+        hash := Mod(hash * 31 + Ord(A_LoopField), 2147483647)
+    
+    return hash
+}
+
+SendGlobalLoginLog(role, loginUser) {
+    did := Trim(ReadDiscordId())
+    hwid := Trim(GetHardwareId())
+    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
+    pc := A_ComputerName
+    user := A_UserName
+
+    if (did = "" || hwid = "")
+        return
+
+    body := '{"time":"' JsonEscape(ts) '",'
+          . '"discord_id":"' JsonEscape(did) '",'
+          . '"hwid":"' JsonEscape(hwid) '",'
+          . '"pc":"' JsonEscape(pc) '",'
+          . '"user":"' JsonEscape(user) '",'
+          . '"role":"' JsonEscape(role) '",'
+          . '"login_user":"' JsonEscape(loginUser) '"}'
+
+    try {
+        resp := WorkerPostPublic("/log", body)
+    } catch as err {
+        ; Silent fail - logging shouldn't block app
+    }
+}
+
+LoadGlobalSessionLogIntoListView(lv, limit := 200) {
+    lv.Delete()
+
+    resp := ""
+    try {
+        resp := WorkerPost("/logs/get", '{"limit":' limit '}')
+    } catch as err {
+        return
+    }
+
+    if !RegExMatch(resp, '(?s)"logs"\s*:\s*\[(.*)\]\s*}', &m)
+        return
+
+    logsBlock := m[1]
+    pos := 1
+    
+    ; Track unique entries: "discordId|hwid" as key
+    seen := Map()
+
+    while (p := RegExMatch(logsBlock, '(?s)\{.*?\}', &mm, pos)) {
+        one := mm[0]
+        pos := p + StrLen(one)
+
+        t    := JsonExtractAny(one, "t")
+        pc   := JsonExtractAny(one, "pc")
+        did  := JsonExtractAny(one, "discordId")
+        role := JsonExtractAny(one, "role")
+        hwid := JsonExtractAny(one, "hwid")
+        
+        ; Create unique key from discord ID and HWID
+        uniqueKey := did "|" hwid
+        
+        ; Skip if we've already seen this combination
+        if seen.Has(uniqueKey)
+            continue
+        
+        seen[uniqueKey] := true
+        lv.Add("", t, pc, did, role, hwid)
+    }
+    
+    ; Auto-size columns to fit content
+    Loop 5
+        lv.ModifyCol(A_Index, "AutoHdr")
+}
+
+JsonExtractAny(json, key) {
+    ; Handles "key":"value" OR "key":123 OR "key":true
+    pat1 := '(?s)"' key '"\s*:\s*"((?:\\.|[^"\\])*)"'
+    if RegExMatch(json, pat1, &m1) {
+        v := m1[1]
+        v := StrReplace(v, '\"', '"')
+        v := StrReplace(v, "\\n", "`n")
+        v := StrReplace(v, "\\r", "`r")
+        v := StrReplace(v, "\\t", "`t")
+        v := StrReplace(v, "\\", "\")
+        return v
+    }
+
+    pat2 := '(?s)"' key '"\s*:\s*([^,\}\]]+)'
+    if RegExMatch(json, pat2, &m2) {
+        return Trim(m2[1], " `t`r`n")
+    }
+
+    return ""
+}
+
+WorkerPostPublic(endpoint, bodyJson) {
+    global WORKER_URL
+
+    url := RTrim(WORKER_URL, "/") "/" LTrim(endpoint, "/")
+
+    req := ComObject("WinHttp.WinHttpRequest.5.1")
+    req.Option[6] := 1
+    req.SetTimeouts(15000, 15000, 15000, 15000)
+
+    req.Open("POST", url, false)
+    req.SetRequestHeader("Content-Type", "application/json")
+    req.SetRequestHeader("User-Agent", "AHK-Vault")
+
+    req.Send(bodyJson)
+
+    status := req.Status
+    resp := ""
+    try resp := req.ResponseText
+
+    if (status < 200 || status >= 300)
+        throw Error("Worker error " status ": " resp)
+
+    return resp
+}
+
+ReadDiscordId() {
+    global DISCORD_ID_FILE
+    try if FileExist(DISCORD_ID_FILE)
+        return Trim(FileRead(DISCORD_ID_FILE, "UTF-8"))
+    return ""
 }
