@@ -14,7 +14,8 @@
     "886398974456655892"
   ],
   "banned_hwids": [
-    "152570392"
+    "152570392",
+    "1525703921"
   ],
   "hwid_bindings": {
     "123123": "1525703921",
@@ -26,5 +27,5 @@
     "🎉 PUBLIC RELEASE! We're excited to launch version 1.0.0 of our vault!",
     "This is the very first release. We’d love to hear your feedback, suggestions, and bug reports—join us on Discord and let us know what you think!",
     "Happy macro’ing and enjoy exploring all the features!"
-]
+  ]
 }
