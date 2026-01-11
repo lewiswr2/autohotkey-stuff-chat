@@ -1908,6 +1908,68 @@ ReadMacroInfo(macroDir) {
     return info
 }
 
+; 1. ADD THIS FUNCTION (from Public Release)
+OnSetGlobalPassword(defaultUser, *) {
+    pw := InputBox("Enter NEW universal password (this pushes to global manifest).", "AHK Vault - Set Global Password", "Password w560 h190")
+    if (pw.Result != "OK")
+        return
+
+    newPass := Trim(pw.Value)
+    if (newPass = "") {
+        MsgBox "Password cannot be blank.", "AHK Vault - Invalid", "Icon! 0x30"
+        return
+    }
+
+    h := HashPassword(newPass)
+    body := '{"cred_user":"' defaultUser '","cred_hash":"' h '"}'
+
+    try {
+        WorkerPost("/cred/set", body)
+        MsgBox "✅ Global password updated in manifest.`n`nNew cred_hash: " h, "AHK Vault", "Iconi"
+    } catch as err {
+        MsgBox "❌ Failed to set global password:`n" err.Message, "AHK Vault", "Icon! 0x10"
+    }
+}
+
+; 2. ADD THIS FUNCTION (from Public Release)
+HashPassword(password) {
+    salt := "V1LN_CLAN_2026_SECURE"
+    combined := salt . password . salt
+    
+    hash := 0
+    Loop Parse combined
+        hash := Mod(hash * 31 + Ord(A_LoopField), 2147483647)
+    
+    Loop 10000 {
+        hash := Mod(hash * 37 + Ord(SubStr(password, Mod(A_Index, StrLen(password)) + 1, 1)), 2147483647)
+    }
+    
+    return hash
+}
+
+; 3. ADD THIS FUNCTION (from Public Release)
+CopyManifestCredentialSnippet(username) {
+    pw := InputBox(
+        "Enter the NEW universal password.`n`nThis will copy cred_user + cred_hash for manifest.json.",
+        "AHK Vault - Generate manifest snippet",
+        "Password w560 h190"
+    )
+    if (pw.Result != "OK")
+        return
+
+    newPass := Trim(pw.Value)
+    if (newPass = "") {
+        MsgBox "Password cannot be blank.", "AHK Vault - Invalid", "Icon! 0x30"
+        return
+    }
+
+    h := HashPassword(newPass)
+    snippet := '"cred_user": "' username '",' "`n" '"cred_hash": "' h '"'
+    A_Clipboard := snippet
+
+    MsgBox "✅ Copied to clipboard.`n`nPaste into manifest.json:`n`n" snippet, "AHK Vault", "Iconi"
+}
+
 RunMacro(path) {
     if !FileExist(path) {
         MsgBox "Macro not found:`n" path, "Error", "Icon!"
@@ -2490,6 +2552,8 @@ AdminPanel(*) {
     ; ===== BUTTONS =====
     refreshBtn := adminGui.Add("Button", "x10 y590 w130 h34 Background" COLORS.card, "Refresh Log")
     clearLogBtn := adminGui.Add("Button", "x150 y590 w130 h34 Background" COLORS.card, "Clear Log")
+    setPassBtn := adminGui.Add("Button", "x290 y590 w190 h34 Background" COLORS.accentAlt, "Set Global Password")
+    copySnippetBtn := adminGui.Add("Button", "x490 y590 w190 h34 Background" COLORS.card, "Copy Manifest Snippet")
     
     ; ===== EVENTS =====
     banBtn.OnEvent("Click", OnBanDiscordId.Bind(banEdit, bannedLbl))
@@ -2506,6 +2570,13 @@ AdminPanel(*) {
     
     adminGui.OnEvent("Close", (*) => adminGui.Destroy())
     adminGui.Show("w900 h640 Center")
+
+    setPassBtn.OnEvent("Click", OnSetGlobalPassword.Bind(DEFAULT_USER))
+    copySnippetBtn.OnEvent("Click", OnCopySnippet.Bind(DEFAULT_USER))
+}
+
+OnCopySnippet(defaultUser, *) {
+    CopyManifestCredentialSnippet(defaultUser)
 }
 
 OnClearLog(lv, *) {
