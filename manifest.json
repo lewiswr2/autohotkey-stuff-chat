@@ -7,15 +7,13 @@
   "webhook": "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_",
   "cred_user": "AHKvaultmacros@discord",
   "cred_password": "test123",
-  "cred_hash": "1105182512",
+  "cred_hash": "1933432670",
   "banned_discord_ids": [],
   "admin_discord_ids": [
     "1247055057489231914",
     "886398974456655892"
   ],
-  "banned_hwids": [
-
-  ],
+  "banned_hwids": [],
   "hwid_bindings": {
     "123123123": "1525703921",
     "1247055057489231914": "1525703921",
