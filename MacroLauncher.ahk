@@ -1,13 +1,15 @@
 #Requires AutoHotkey v2.0
 #SingleInstance Force
 
-global LAUNCHER_VERSION := "2.0.5"
+global LAUNCHER_VERSION := "2.1.0"
 
 ; ================= CONFIG =================
 global APP_DIR := A_AppData "\MacroLauncher"
 global BASE_DIR := APP_DIR "\Macros"
 global VERSION_FILE := APP_DIR "\version.txt"
 global ICON_DIR := BASE_DIR "\Icons"
+global STATS_FILE := APP_DIR "\stats.json"
+global FAVORITES_FILE := APP_DIR "\favorites.json"
 global MANIFEST_URL := "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/manifest.json"
 global mainGui := 0
 
@@ -24,8 +26,13 @@ global COLORS := {
     border: "0x21262d",
     success: "0x238636",
     warning: "0xd29922",
-    danger: "0xda3633"
+    danger: "0xda3633",
+    favorite: "0xfbbf24"
 }
+
+; Stats & Favorites data
+global macroStats := Map()
+global favorites := Map()
 
 ; =========================================
 
@@ -38,10 +45,319 @@ try {
 }
 
 EnsureVersionFile()
+LoadStats()
+LoadFavorites()
 SetTaskbarIcon()
 CheckForLauncherUpdate()
 CheckForUpdatesPrompt()
 CreateMainGui()
+
+; ========== NEW: STATS & FAVORITES SYSTEM ==========
+
+LoadStats() {
+    global macroStats, STATS_FILE
+    
+    if !FileExist(STATS_FILE) {
+        macroStats := Map()
+        return
+    }
+    
+    try {
+        json := FileRead(STATS_FILE, "UTF-8")
+        parsed := ParseStatsJSON(json)
+        if parsed
+            macroStats := parsed
+        else
+            macroStats := Map()
+    } catch {
+        macroStats := Map()
+    }
+}
+
+SaveStats() {
+    global macroStats, STATS_FILE
+    
+    try {
+        json := StatsToJSON(macroStats)
+        if FileExist(STATS_FILE)
+            FileDelete STATS_FILE
+        FileAppend json, STATS_FILE, "UTF-8"
+    } catch {
+    }
+}
+
+LoadFavorites() {
+    global favorites, FAVORITES_FILE
+    
+    if !FileExist(FAVORITES_FILE) {
+        favorites := Map()
+        return
+    }
+    
+    try {
+        json := FileRead(FAVORITES_FILE, "UTF-8")
+        parsed := ParseFavoritesJSON(json)
+        if parsed
+            favorites := parsed
+        else
+            favorites := Map()
+    } catch {
+        favorites := Map()
+    }
+}
+
+SaveFavorites() {
+    global favorites, FAVORITES_FILE
+    
+    try {
+        json := FavoritesToJSON(favorites)
+        if FileExist(FAVORITES_FILE)
+            FileDelete FAVORITES_FILE
+        FileAppend json, FAVORITES_FILE, "UTF-8"
+    } catch {
+    }
+}
+
+GetMacroKey(macroPath) {
+    ; Create unique key from path
+    return StrReplace(StrReplace(macroPath, "\", "_"), ":", "")
+}
+
+IncrementRunCount(macroPath) {
+    global macroStats
+    
+    key := GetMacroKey(macroPath)
+    
+    if macroStats.Has(key) {
+        stats := macroStats[key]
+        stats.runCount++
+        stats.lastRun := A_Now
+    } else {
+        macroStats[key] := {
+            runCount: 1,
+            lastRun: A_Now,
+            firstRun: A_Now
+        }
+    }
+    
+    SaveStats()
+}
+
+GetRunCount(macroPath) {
+    global macroStats
+    
+    key := GetMacroKey(macroPath)
+    
+    if macroStats.Has(key)
+        return macroStats[key].runCount
+    
+    return 0
+}
+
+ToggleFavorite(macroPath) {
+    global favorites
+    
+    key := GetMacroKey(macroPath)
+    
+    if favorites.Has(key)
+        favorites.Delete(key)
+    else
+        favorites[key] := {
+            path: macroPath,
+            addedAt: A_Now
+        }
+    
+    SaveFavorites()
+}
+
+IsFavorite(macroPath) {
+    global favorites
+    
+    key := GetMacroKey(macroPath)
+    return favorites.Has(key)
+}
+
+StatsToJSON(statsMap) {
+    if statsMap.Count = 0
+        return "{}"
+    
+    pairs := []
+    for key, data in statsMap {
+        keyStr := EscapeJSON(key)
+        runCount := data.runCount
+        lastRun := EscapeJSON(data.lastRun)
+        firstRun := EscapeJSON(data.firstRun)
+        
+        pairs.Push('"' keyStr '":{"runCount":' runCount ',"lastRun":"' lastRun '","firstRun":"' firstRun '""}')
+    }
+    
+    return "{" StrJoin(pairs, ",") "}"
+}
+
+FavoritesToJSON(favMap) {
+    if favMap.Count = 0
+        return "{}"
+    
+    pairs := []
+    for key, data in favMap {
+        keyStr := EscapeJSON(key)
+        path := EscapeJSON(data.path)
+        addedAt := EscapeJSON(data.addedAt)
+        
+        pairs.Push('"' keyStr '":{"path":"' path '","addedAt":"' addedAt '"}')
+    }
+    
+    return "{" StrJoin(pairs, ",") "}"
+}
+
+ParseStatsJSON(json) {
+    result := Map()
+    
+    if !json || json = "{}"
+        return result
+    
+    try {
+        ; Remove outer braces
+        content := Trim(SubStr(json, 2, StrLen(json) - 2))
+        
+        ; Split by top-level commas
+        entries := SplitTopLevel(content)
+        
+        for entry in entries {
+            if !InStr(entry, ":")
+                continue
+            
+            ; Extract key
+            if !RegExMatch(entry, '"([^"]+)":\s*{', &m)
+                continue
+            
+            key := m[1]
+            
+            ; Extract values
+            runCount := 0
+            lastRun := ""
+            firstRun := ""
+            
+            if RegExMatch(entry, '"runCount"\s*:\s*(\d+)', &m2)
+                runCount := Integer(m2[1])
+            
+            if RegExMatch(entry, '"lastRun"\s*:\s*"([^"]+)"', &m3)
+                lastRun := m3[1]
+            
+            if RegExMatch(entry, '"firstRun"\s*:\s*"([^"]+)"', &m4)
+                firstRun := m4[1]
+            
+            result[key] := {
+                runCount: runCount,
+                lastRun: lastRun,
+                firstRun: firstRun
+            }
+        }
+    } catch {
+        return Map()
+    }
+    
+    return result
+}
+
+ParseFavoritesJSON(json) {
+    result := Map()
+    
+    if !json || json = "{}"
+        return result
+    
+    try {
+        content := Trim(SubStr(json, 2, StrLen(json) - 2))
+        entries := SplitTopLevel(content)
+        
+        for entry in entries {
+            if !InStr(entry, ":")
+                continue
+            
+            if !RegExMatch(entry, '"([^"]+)":\s*{', &m)
+                continue
+            
+            key := m[1]
+            
+            path := ""
+            addedAt := ""
+            
+            if RegExMatch(entry, '"path"\s*:\s*"([^"]+)"', &m2)
+                path := UnescapeJSON(m2[1])
+            
+            if RegExMatch(entry, '"addedAt"\s*:\s*"([^"]+)"', &m3)
+                addedAt := m3[1]
+            
+            if path != ""
+                result[key] := {
+                    path: path,
+                    addedAt: addedAt
+                }
+        }
+    } catch {
+        return Map()
+    }
+    
+    return result
+}
+
+SplitTopLevel(str) {
+    result := []
+    depth := 0
+    current := ""
+    
+    Loop Parse, str {
+        char := A_LoopField
+        
+        if (char = "{")
+            depth++
+        else if (char = "}")
+            depth--
+        
+        if (char = "," && depth = 0) {
+            if (Trim(current) != "")
+                result.Push(Trim(current))
+            current := ""
+        } else {
+            current .= char
+        }
+    }
+    
+    if (Trim(current) != "")
+        result.Push(Trim(current))
+    
+    return result
+}
+
+EscapeJSON(str) {
+    str := StrReplace(str, "\", "\\")
+    str := StrReplace(str, '"', '\"')
+    str := StrReplace(str, "`n", "\n")
+    str := StrReplace(str, "`r", "\r")
+    str := StrReplace(str, "`t", "\t")
+    return str
+}
+
+UnescapeJSON(str) {
+    str := StrReplace(str, "\\", "\")
+    str := StrReplace(str, '\"', '"')
+    str := StrReplace(str, "\n", "`n")
+    str := StrReplace(str, "\r", "`r")
+    str := StrReplace(str, "\t", "`t")
+    return str
+}
+
+StrJoin(arr, delim) {
+    result := ""
+    for item in arr {
+        if (result != "")
+            result .= delim
+        result .= item
+    }
+    return result
+}
+
+; ========== END STATS & FAVORITES ==========
 
 EnsureVersionFile() {
     global VERSION_FILE
@@ -288,7 +604,6 @@ ManualUpdate(*) {
         return
     }
     
-    ; 🔥 DELETE VERSION FILE BEFORE CHECKING
     try {
         if FileExist(VERSION_FILE)
             FileDelete VERSION_FILE
@@ -937,6 +1252,7 @@ OpenCategory(category) {
     win.__cards := []
     win.__currentPage := 1
     win.__itemsPerPage := 8
+    win.__sortBy := "favorites"  ; Default sort
     
     gameIcon := GetGameIcon(category)
     if (gameIcon && FileExist(gameIcon)) {
@@ -952,8 +1268,115 @@ OpenCategory(category) {
     backBtn.SetFont("s10")
     backBtn.OnEvent("Click", (*) => win.Destroy())
     
-    title := win.Add("Text", "x105 y20 w500 h100 c" COLORS.text " BackgroundTrans", category)
+    title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", category)
     title.SetFont("s22 bold")
+    
+    ; Sort dropdown
+    sortLabel := win.Add("Text", "x530 y25 w60 c" COLORS.text " BackgroundTrans", "Sort by:")
+    sortLabel.SetFont("s9")
+    
+    sortDDL := win.Add("DropDownList", "x530 y45 w200 Background" COLORS.card " c" COLORS.text, 
+        ["⭐ Favorites First", "🔤 Name (A-Z)", "🔤 Name (Z-A)", "📊 Most Used", "📊 Least Used", "📅 Recently Added"])
+    sortDDL.SetFont("s9")
+    sortDDL.Choose(1)  ; Default to Favorites First
+    sortDDL.OnEvent("Change", (*) => ChangeSortAndRefresh(win, sortDDL.Text, category))
+    
+    win.__scrollY := 110
+    
+    win.OnEvent("Close", (*) => win.Destroy())
+    
+    RenderCards(win)
+    
+    win.Show("w750 h640 Center")
+}
+
+ChangeSortAndRefresh(win, sortText, category) {
+    ; Map display text to sort mode
+    sortMap := Map(
+        "⭐ Favorites First", "favorites",
+        "🔤 Name (A-Z)", "name_asc",
+        "🔤 Name (Z-A)", "name_desc",
+        "📊 Most Used", "runs_desc",
+        "📊 Least Used", "runs_asc",
+        "📅 Recently Added", "recent"
+    )
+    
+    sortBy := sortMap.Has(sortText) ? sortMap[sortText] : "favorites"
+    
+    ; Close current window
+    win.Destroy()
+    
+    ; Small delay for smooth transition
+    Sleep 100
+    
+    ; Reopen with new sort
+    OpenCategoryWithSort(category, sortBy)
+}
+
+OpenCategoryWithSort(category, sortBy := "favorites") {
+    global COLORS, BASE_DIR
+    
+    macros := GetMacrosWithInfo(category, sortBy)
+    
+    if (macros.Length = 0) {
+        MsgBox(
+            "No macros found in '" category "'`n`n"
+            "To add macros:`n"
+            "1. Create a 'Main.ahk' file in each subfolder`n"
+            "2. Or run the update to download macros`n`n"
+            "Folder location:`n" BASE_DIR "\" category,
+            "No Macros",
+            "Iconi"
+        )
+        return
+    }
+    
+    win := Gui("-Resize +Border", category " - Macros")
+    win.BackColor := COLORS.bg
+    win.SetFont("s10", "Segoe UI")
+    
+    win.__data := macros
+    win.__cards := []
+    win.__currentPage := 1
+    win.__itemsPerPage := 8
+    win.__sortBy := sortBy
+    
+    gameIcon := GetGameIcon(category)
+    if (gameIcon && FileExist(gameIcon)) {
+        try {
+            win.Show("Hide")
+            win.Opt("+Icon" gameIcon)
+        }
+    }
+    
+    win.Add("Text", "x0 y0 w750 h90 Background" COLORS.accent)
+    
+    backBtn := win.Add("Button", "x20 y25 w70 h35 Background" COLORS.accentHover, "← Back")
+    backBtn.SetFont("s10")
+    backBtn.OnEvent("Click", (*) => win.Destroy())
+    
+    title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", category)
+    title.SetFont("s22 bold")
+    
+    ; Sort dropdown
+    sortLabel := win.Add("Text", "x530 y25 w60 c" COLORS.text " BackgroundTrans", "Sort by:")
+    sortLabel.SetFont("s9")
+    
+    sortDDL := win.Add("DropDownList", "x530 y45 w200 Background" COLORS.card " c" COLORS.text, 
+        ["⭐ Favorites First", "🔤 Name (A-Z)", "🔤 Name (Z-A)", "📊 Most Used", "📊 Least Used", "📅 Recently Added"])
+    sortDDL.SetFont("s9")
+    
+    ; Set the correct selection based on sortBy
+    sortIndexMap := Map(
+        "favorites", 1,
+        "name_asc", 2,
+        "name_desc", 3,
+        "runs_desc", 4,
+        "runs_asc", 5,
+        "recent", 6
+    )
+    sortDDL.Choose(sortIndexMap.Has(sortBy) ? sortIndexMap[sortBy] : 1)
+    sortDDL.OnEvent("Change", (*) => ChangeSortAndRefresh(win, sortDDL.Text, category))
     
     win.__scrollY := 110
     
@@ -1006,12 +1429,10 @@ RenderCards(win) {
     
     itemsToShow := endIdx - startIdx + 1
     
-    ; Special case: only 1 macro = full width
     if (itemsToShow = 1) {
         item := macros[startIdx]
         CreateFullWidthCard(win, item, 25, scrollY, 700, 110)
     } else {
-        ; Grid: 2 columns, 4 rows
         cardWidth := 340
         cardHeight := 110
         spacing := 10
@@ -1031,7 +1452,6 @@ RenderCards(win) {
         }
     }
     
-    ; Pagination controls
     if (macros.Length > itemsPerPage) {
         paginationY := scrollY + 470
         
@@ -1082,11 +1502,11 @@ CreateFullWidthCard(win, item, x, y, w, h) {
         win.__cards.Push(badge)
     }
     
-    titleCtrl := win.Add("Text", "x" (x + 120) " y" (y + 20) " w420 h100 c" COLORS.text " BackgroundTrans", item.info.Title)
+    titleCtrl := win.Add("Text", "x" (x + 120) " y" (y + 20) " w340 h100 c" COLORS.text " BackgroundTrans", item.info.Title)
     titleCtrl.SetFont("s13 bold")
     win.__cards.Push(titleCtrl)
     
-    creatorCtrl := win.Add("Text", "x" (x + 120) " y" (y + 50) " w420 c" COLORS.textDim " BackgroundTrans", "by " item.info.Creator)
+    creatorCtrl := win.Add("Text", "x" (x + 120) " y" (y + 50) " w340 c" COLORS.textDim " BackgroundTrans", "by " item.info.Creator)
     creatorCtrl.SetFont("s10")
     win.__cards.Push(creatorCtrl)
     
@@ -1094,7 +1514,20 @@ CreateFullWidthCard(win, item, x, y, w, h) {
     versionCtrl.SetFont("s9 bold")
     win.__cards.Push(versionCtrl)
     
+    runCount := GetRunCount(item.path)
+    if (runCount > 0) {
+        runCountCtrl := win.Add("Text", "x" (x + 190) " y" (y + 75) " w100 h22 c" COLORS.textDim " BackgroundTrans", "Runs: " runCount)
+        runCountCtrl.SetFont("s9")
+        win.__cards.Push(runCountCtrl)
+    }
+    
     currentPath := item.path
+    isFav := IsFavorite(currentPath)
+    favBtn := win.Add("Button", "x" (x + w - 180) " y" (y + 20) " w60 h35 Background" (isFav ? COLORS.favorite : COLORS.cardHover), isFav ? "★" : "☆")
+    favBtn.SetFont("s18")
+    favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
+    win.__cards.Push(favBtn)
+    
     runBtn := win.Add("Button", "x" (x + w - 110) " y" (y + 20) " w100 h35 Background" COLORS.success, "▶ Run")
     runBtn.SetFont("s11 bold")
     runBtn.OnEvent("Click", (*) => RunMacro(currentPath))
@@ -1135,18 +1568,9 @@ CreateGridCard(win, item, x, y, w, h) {
         win.__cards.Push(badge)
     }
     
-titleCtrl := win.Add(
-    "Text"
-  , "x" (x + 90)
-  . " y" (y + 15)
-  . " w" (w - 190)
-  . " h" (h + 50)
-  . " c" COLORS.text
-  . " BackgroundTrans"
-  , item.info.Title
-)
-titleCtrl.SetFont("s11 bold")
-win.__cards.Push(titleCtrl)
+    titleCtrl := win.Add("Text", "x" (x + 90) " y" (y + 15) " w" (w - 190) " h30 c" COLORS.text " BackgroundTrans", item.info.Title)
+    titleCtrl.SetFont("s11 bold")
+    win.__cards.Push(titleCtrl)
     
     creatorCtrl := win.Add("Text", "x" (x + 90) " y" (y + 40) " w" (w - 190) " c" COLORS.textDim " BackgroundTrans", "by " item.info.Creator)
     creatorCtrl.SetFont("s9")
@@ -1156,7 +1580,20 @@ win.__cards.Push(titleCtrl)
     versionCtrl.SetFont("s8 bold")
     win.__cards.Push(versionCtrl)
     
+    runCount := GetRunCount(item.path)
+    if (runCount > 0) {
+        runCountCtrl := win.Add("Text", "x" (x + 150) " y" (y + 65) " w80 h20 c" COLORS.textDim " BackgroundTrans", "Runs: " runCount)
+        runCountCtrl.SetFont("s8")
+        win.__cards.Push(runCountCtrl)
+    }
+    
     currentPath := item.path
+    isFav := IsFavorite(currentPath)
+    favBtn := win.Add("Button", "x" (x + w - 110) " y" (y + 15) " w20 h20 Background" (isFav ? COLORS.favorite : COLORS.cardHover), isFav ? "★" : "☆")
+    favBtn.SetFont("s10")
+    favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
+    win.__cards.Push(favBtn)
+    
     runBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 15) " w80 h30 Background" COLORS.success, "▶ Run")
     runBtn.SetFont("s10 bold")
     runBtn.OnEvent("Click", (*) => RunMacro(currentPath))
@@ -1168,6 +1605,30 @@ win.__cards.Push(titleCtrl)
         linksBtn.SetFont("s9")
         linksBtn.OnEvent("Click", (*) => OpenLinks(currentLinks))
         win.__cards.Push(linksBtn)
+    }
+}
+
+ToggleFavoriteAndRefresh(win, macroPath) {
+    ToggleFavorite(macroPath)
+    
+    ; Store the window title to reopen the same category
+    winTitle := win.Title
+    
+    ; Extract category name from title (format: "CategoryName - Macros")
+    if RegExMatch(winTitle, "^(.+) - Macros$", &m) {
+        category := m[1]
+        
+        ; Close current window
+        win.Destroy()
+        
+        ; Small delay for smooth transition
+        Sleep 100
+        
+        ; Reopen the category
+        OpenCategory(category)
+    } else {
+        ; Fallback: just refresh if title doesn't match expected format
+        RenderCards(win)
     }
 }
 
@@ -1221,7 +1682,7 @@ GetMacroIcon(macroPath) {
     return ""
 }
 
-GetMacrosWithInfo(category) {
+GetMacrosWithInfo(category, sortBy := "favorites") {
     global BASE_DIR
     out := []
     base := BASE_DIR "\" category
@@ -1260,7 +1721,136 @@ GetMacrosWithInfo(category) {
         }
     }
     
+    ; Sort macros based on sortBy parameter
+    if (out.Length > 1) {
+        switch sortBy {
+            case "favorites":
+                out := SortByFavorites(out)
+            case "name_asc":
+                out := SortByName(out, true)
+            case "name_desc":
+                out := SortByName(out, false)
+            case "runs_desc":
+                out := SortByRuns(out, false)
+            case "runs_asc":
+                out := SortByRuns(out, true)
+            case "recent":
+                out := SortByRecent(out)
+            default:
+                out := SortByFavorites(out)
+        }
+    }
+    
     return out
+}
+
+SortByFavorites(macros) {
+    favs := []
+    nonFavs := []
+    
+    for item in macros {
+        if IsFavorite(item.path) {
+            favs.Push(item)
+        } else {
+            nonFavs.Push(item)
+        }
+    }
+    
+    sorted := []
+    for item in favs {
+        sorted.Push(item)
+    }
+    for item in nonFavs {
+        sorted.Push(item)
+    }
+    
+    return sorted
+}
+
+SortByName(macros, ascending := true) {
+    sorted := macros.Clone()
+    
+    ; Simple bubble sort by title
+    Loop sorted.Length - 1 {
+        i := A_Index
+        Loop sorted.Length - i {
+            j := A_Index + i
+            
+            if ascending {
+                if (StrLower(sorted[i].info.Title) > StrLower(sorted[j].info.Title)) {
+                    temp := sorted[i]
+                    sorted[i] := sorted[j]
+                    sorted[j] := temp
+                }
+            } else {
+                if (StrLower(sorted[i].info.Title) < StrLower(sorted[j].info.Title)) {
+                    temp := sorted[i]
+                    sorted[i] := sorted[j]
+                    sorted[j] := temp
+                }
+            }
+        }
+    }
+    
+    return sorted
+}
+
+SortByRuns(macros, ascending := true) {
+    sorted := macros.Clone()
+    
+    ; Bubble sort by run count
+    Loop sorted.Length - 1 {
+        i := A_Index
+        Loop sorted.Length - i {
+            j := A_Index + i
+            
+            runI := GetRunCount(sorted[i].path)
+            runJ := GetRunCount(sorted[j].path)
+            
+            if ascending {
+                if (runI > runJ) {
+                    temp := sorted[i]
+                    sorted[i] := sorted[j]
+                    sorted[j] := temp
+                }
+            } else {
+                if (runI < runJ) {
+                    temp := sorted[i]
+                    sorted[i] := sorted[j]
+                    sorted[j] := temp
+                }
+            }
+        }
+    }
+    
+    return sorted
+}
+
+SortByRecent(macros) {
+    global favorites
+    sorted := macros.Clone()
+    
+    ; Bubble sort by favorite timestamp (most recent first)
+    Loop sorted.Length - 1 {
+        i := A_Index
+        Loop sorted.Length - i {
+            j := A_Index + i
+            
+            keyI := GetMacroKey(sorted[i].path)
+            keyJ := GetMacroKey(sorted[j].path)
+            
+            timeI := favorites.Has(keyI) ? favorites[keyI].addedAt : "0"
+            timeJ := favorites.Has(keyJ) ? favorites[keyJ].addedAt : "0"
+            
+            if (timeI < timeJ) {
+                temp := sorted[i]
+                sorted[i] := sorted[j]
+                sorted[j] := temp
+            }
+        }
+    }
+    
+    return sorted
 }
 
 ReadMacroInfo(macroDir) {
@@ -1330,6 +1920,8 @@ RunMacro(path) {
         MsgBox "Macro not found:`n" path, "Error", "Icon!"
         return
     }
+    
+    IncrementRunCount(path)
     
     try {
         SplitPath path, , &dir
@@ -1496,10 +2088,8 @@ ExtractZipShell(zipPath, destDir) {
         if !dest
             throw Error("Shell.NameSpace(dest) failed.")
 
-        ; 16 = Yes to all overwrite prompts
         dest.CopyHere(zip.Items(), 16)
 
-        ; wait for extraction to finish (simple heuristic)
         t0 := A_TickCount
         Loop 60 {
             if HasAnyFileOrFolder(destDir)
@@ -1553,7 +2143,6 @@ TryFileCopy(src, dst, overwrite := true, retries := 10) {
 }
 
 FindTopFolder(extractDir) {
-    ; If zip extracts as one top folder (common with GitHub zips), return it
     folders := []
     try {
         Loop Files, extractDir "\*", "D"
@@ -1563,6 +2152,7 @@ FindTopFolder(extractDir) {
         return folders[1]
     return extractDir
 }
+
 ShowUpdateFail(context, err, extra := "") {
     msg := "❌ Failed to install macro updates`n`n"
         . "Step: " context "`n"
@@ -1574,6 +2164,7 @@ ShowUpdateFail(context, err, extra := "") {
 
     MsgBox msg, "AHK vault - Update Failed", "Icon! 0x10"
 }
+
 IsValidZip(path) {
     try {
         if !FileExist(path)
