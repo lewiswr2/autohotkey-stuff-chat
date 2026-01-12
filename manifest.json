@@ -8,7 +8,9 @@
   "cred_user": "AHKvaultmacros@discord",
   "cred_password": "test123",
   "cred_hash": "1849087399",
-  "banned_discord_ids": [],
+  "banned_discord_ids": [
+    "1247055057489231914"
+  ],
   "admin_discord_ids": [
     "1247055057489231914",
     "886398974456655892"
