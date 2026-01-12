@@ -1,6 +1,6 @@
 {
-  "version": "1.0.0",
-  "launcher_version": "1.0.0",
+  "version": "1.0.1",
+  "launcher_version": "1.0.1",
   "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
   "master_key": "A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7",
   "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
@@ -29,6 +29,7 @@
   "changelog": [
     "🎉 PUBLIC RELEASE! We're excited to launch version 1.0.0 of our vault!",
     "This is the very first release. We’d love to hear your feedback, suggestions, and bug reports—join us on Discord and let us know what you think!",
-    "Happy macro’ing and enjoy exploring all the features!"
+    "Happy macro’ing and enjoy exploring all the features!",
+    "Updated RCU woodfarm Macro!"
   ]
 }
