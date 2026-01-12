@@ -1,3 +1,13 @@
 {
-  "logs": []
+  "logs": [
+    {
+      "t": "2026-01-12 18:39:36",
+      "pc": "SACHIN",
+      "user": "Hi",
+      "discordId": "966696524904022139",
+      "hwid": "1890669367",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    }
+  ]
 }
