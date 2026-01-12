@@ -1,6 +1,15 @@
 {
   "logs": [
     {
+      "t": "2026-01-12 16:49:27",
+      "pc": "RAGNHILDLHAALAN",
+      "user": "ragnh",
+      "discordId": "417775330569355266",
+      "hwid": "1073681314",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
       "t": "2026-01-12 18:39:36",
       "pc": "SACHIN",
       "user": "Hi",
