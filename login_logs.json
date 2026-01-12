@@ -1,16 +1,7 @@
 {
   "logs": [
     {
-      "t": "2026-01-11 14:49:22",
-      "pc": "YUP",
-      "user": "edwar",
-      "discordId": "886398974456655892",
-      "hwid": "160377749",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-11 17:36:09",
+      "t": "2026-01-12 19:20:41",
       "pc": "LEWIS",
       "user": "Lewis",
       "discordId": "1247055057489231914",
@@ -19,79 +10,7 @@
       "loginUser": "AHKvaultmacros@discord"
     },
     {
-      "t": "2026-01-11 17:24:57",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "123123123",
-      "hwid": "1525703921",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-11 17:15:30",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "123123123",
-      "hwid": "1525703921",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-11 17:10:21",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "123123123",
-      "hwid": "1525703921",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-11 17:06:42",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "123123123",
-      "hwid": "1525703921",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-11 16:55:04",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "123123123",
-      "hwid": "1525703921",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-10 21:00:31",
-      "pc": "YUP",
-      "user": "edwar",
-      "discordId": "886398974456655892",
-      "hwid": "160377749",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-10 20:57:10",
-      "pc": "YUP",
-      "user": "edwar",
-      "discordId": "886398974456655892",
-      "hwid": "160377749",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-10 20:55:40",
-      "pc": "YUP",
-      "user": "edwar",
-      "discordId": "886398974456655892",
-      "hwid": "160377749",
-      "role": "user",
-      "loginUser": "AHKvaultmacros@discord"
-    },
-    {
-      "t": "2026-01-11 00:09:15",
+      "t": "2026-01-12 19:13:05",
       "pc": "LEWIS",
       "user": "Lewis",
       "discordId": "1247055057489231914",
@@ -100,38 +19,29 @@
       "loginUser": "AHKvaultmacros@discord"
     },
     {
-      "t": "2026-01-11 00:04:33",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "1247055057489231914",
-      "hwid": "1525703921",
+      "t": "2026-01-12 18:54:17",
+      "pc": "ERROL",
+      "user": "errol",
+      "discordId": "566292461799079937",
+      "hwid": "1630785780",
       "role": "user",
       "loginUser": "AHKvaultmacros@discord"
     },
     {
-      "t": "2026-01-10 19:04:09",
-      "pc": "YUP",
-      "user": "edwar",
-      "discordId": "886398974456655892",
-      "hwid": "160377749",
+      "t": "2026-01-12 16:49:27",
+      "pc": "RAGNHILDLHAALAN",
+      "user": "ragnh",
+      "discordId": "417775330569355266",
+      "hwid": "1073681314",
       "role": "user",
       "loginUser": "AHKvaultmacros@discord"
     },
     {
-      "t": "2026-01-10 23:59:24",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "1247055057489231914",
-      "hwid": "1525703921",
-      "role": "admin",
-      "loginUser": "master"
-    },
-    {
-      "t": "2026-01-10 22:54:23",
-      "pc": "LEWIS",
-      "user": "Lewis",
-      "discordId": "1247055057489231914",
-      "hwid": "1525703921",
+      "t": "2026-01-12 18:39:36",
+      "pc": "SACHIN",
+      "user": "Hi",
+      "discordId": "966696524904022139",
+      "hwid": "1890669367",
       "role": "user",
       "loginUser": "AHKvaultmacros@discord"
     }
