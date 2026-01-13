@@ -8,15 +8,11 @@
   "cred_user": "AHKvaultmacros@discord",
   "cred_password": "test123",
   "cred_hash": "1849087399",
-  "banned_discord_ids": [
-   
-  ],
+  "banned_discord_ids": [],
   "admin_discord_ids": [
-"1247055057489231914"
+    "1247055057489231914"
   ],
-  "banned_hwids": [
-   
-  ],
+  "banned_hwids": [],
   "hwid_bindings": {
     "123123": "1525703921",
     "123123123": "1525703921",
@@ -28,7 +24,8 @@
     "417775330569355266": "1073681314",
     "566292461799079937": "1630785780",
     "1063441017623281665": "673220618",
-    "684487343054651495": "446187934"
+    "684487343054651495": "446187934",
+    "335682229214642177": "1462598085"
   },
   "changelog": [
     "🎉 PUBLIC RELEASE! We're excited to launch version 1.0.0 of our vault!",
