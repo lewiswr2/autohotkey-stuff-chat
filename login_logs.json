@@ -1,6 +1,15 @@
 {
   "logs": [
     {
+      "t": "2026-01-14 09:56:20",
+      "pc": "DESKTOP-7U79MO9",
+      "user": "Hazel",
+      "discordId": "992980380267323432",
+      "hwid": "358851400",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
       "t": "2026-01-13 21:24:59",
       "pc": "DESKTOP-DYPJFPF",
       "user": "unknown",
