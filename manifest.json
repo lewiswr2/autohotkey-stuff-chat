@@ -4,9 +4,7 @@
   "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
   "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
   "password_hash": "1849087399",
-  "banned_discord_ids": [
-    "886398974456655892"
-  ],
+  "banned_discord_ids": [],
   "admin_discord_ids": [
     "1247055057489231914"
   ],
