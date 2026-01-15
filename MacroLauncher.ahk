@@ -2883,7 +2883,7 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
         catch
         
         RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
     } catch as err {
         MsgBox "❌ Failed to ban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
@@ -2917,7 +2917,7 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
         catch
         
         RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
     } catch as err {
         MsgBox "❌ Failed to unban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
