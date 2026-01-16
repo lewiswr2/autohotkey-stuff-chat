@@ -8,7 +8,8 @@
   "password_hash": "1849087399",
   "banned_discord_ids": [],
   "admin_discord_ids": [
-    "1247055057489231914"
+    "1247055057489231914",
+    "886398974456655892"
   ],
   "banned_hwids": [],
   "hwid_bindings": {
