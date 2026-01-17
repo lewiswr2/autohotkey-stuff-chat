@@ -1,6 +1,96 @@
 {
   "logs": [
     {
+      "t": "2026-01-14 09:56:20",
+      "pc": "DESKTOP-7U79MO9",
+      "user": "Hazel",
+      "discordId": "992980380267323432",
+      "hwid": "358851400",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-13 21:24:59",
+      "pc": "DESKTOP-DYPJFPF",
+      "user": "unknown",
+      "discordId": "1386408083806355526",
+      "hwid": "698357975",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-13 18:31:34",
+      "pc": "MSI",
+      "user": "megan",
+      "discordId": "269904947578011649",
+      "hwid": "1829303910",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-13 17:36:13",
+      "pc": "DESKTOP-0S5B186",
+      "user": "Admin",
+      "discordId": "1164815454917886013",
+      "hwid": "911782827",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-13 14:10:51",
+      "pc": "THE_PUNKY_PC",
+      "user": "finla",
+      "discordId": "1247055057489231914",
+      "hwid": "915062640",
+      "role": "master",
+      "loginUser": "master"
+    },
+    {
+      "t": "2026-01-13 11:03:29",
+      "pc": "CLB001",
+      "user": "curti",
+      "discordId": "335682229214642177",
+      "hwid": "1462598085",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-12 22:08:20",
+      "pc": "LEWIS",
+      "user": "Lewis",
+      "discordId": "1247055057489231914",
+      "hwid": "1525703921",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-12 23:01:56",
+      "pc": "PC-67213",
+      "user": "dark1",
+      "discordId": "684487343054651495",
+      "hwid": "446187934",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-12 21:51:23",
+      "pc": "LEWIS",
+      "user": "Lewis",
+      "discordId": "123123",
+      "hwid": "1525703921",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
+      "t": "2026-01-12 22:44:16",
+      "pc": "DESKTOP-AD87TCV",
+      "user": "filip",
+      "discordId": "1063441017623281665",
+      "hwid": "673220618",
+      "role": "user",
+      "loginUser": "AHKvaultmacros@discord"
+    },
+    {
       "t": "2026-01-12 19:20:41",
       "pc": "LEWIS",
       "user": "Lewis",

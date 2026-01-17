@@ -5,6 +5,7 @@
 global LAUNCHER_VERSION := "2.1.0"
 
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
+global SESSION_TOKEN_FILE := A_Temp "\.session_token"
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
 
 ; Credential & Session Files
@@ -20,9 +21,6 @@ global LAST_CRED_HASH_FILE := ""
 global HWID_BAN_FILE := ""
 
 ; Master Credentials
-global MASTER_KEY := ""
-global DISCORD_WEBHOOK := ""
-global ADMIN_PASS := ""
 global SECURE_CONFIG_FILE := ""
 global ENCRYPTED_KEY_FILE := ""
 global MASTER_KEY_ROTATION_FILE := ""
@@ -89,6 +87,19 @@ CreateGUID() {
     return guid
 }
 
+SetTaskbarIcon() {
+    global ICON_DIR
+    iconPath := ICON_DIR "\Launcher.png"
+    
+    try {
+        if FileExist(iconPath)
+            TraySetIcon(iconPath)
+        else
+            TraySetIcon("shell32.dll", 3)  ; This is showing - file not found
+    } catch {
+    }
+}
+
 ; ========== INITIALIZATION ==========
 InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
@@ -121,7 +132,6 @@ InitializeSecureVault() {
     }
     
     EnsureVersionFile()
-    FetchMasterKeyFromManifest()
 }
 
 GetOrCreatePersistentKey() {
@@ -171,19 +181,6 @@ EnsureVersionFile() {
     global VERSION_FILE
     if !FileExist(VERSION_FILE) {
         try FileAppend "0", VERSION_FILE
-    }
-}
-
-SetTaskbarIcon() {
-    global ICON_DIR
-    iconPath := ICON_DIR "\Launcher.png"
-    
-    try {
-        if FileExist(iconPath)
-            TraySetIcon(iconPath)
-        else
-            TraySetIcon("shell32.dll", 3)
-    } catch {
     }
 }
 
@@ -2295,31 +2292,6 @@ IsValidZip(path) {
     }
 }
 
-; ========== ADMIN PANEL ==========
-
-FetchMasterKeyFromManifest() {
-    global MASTER_KEY, MANIFEST_URL
-    
-    try {
-        tmp := A_Temp "\manifest_config.json"
-        if SafeDownload(MANIFEST_URL, tmp, 20000) {
-            json := FileRead(tmp, "UTF-8")
-            if RegExMatch(json, '"master_key"\s*:\s*"([^"]+)"', &m) {
-                MASTER_KEY := m[1]
-                return true
-            }
-        }
-    } catch {
-    }
-    
-    if (MASTER_KEY = "") {
-        MASTER_KEY := GenerateRandomKey(32)
-        return false
-    }
-    
-    return false
-}
-
 GenerateRandomKey(length := 32) {
     chars := "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*"
     key := ""
@@ -2481,9 +2453,7 @@ OverwriteListFile(filePath, arr) {
 
 AdminPanel(*) {
     global MASTER_KEY, COLORS, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
-    
-    FetchMasterKeyFromManifest()
-    
+        
     ib := InputBox("Enter MASTER KEY to open Admin Panel:", "AHK Vault - Admin Panel", "Password w460 h170")
     if (ib.Result != "OK")
         return
@@ -2883,7 +2853,7 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
         catch
         
         RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
     } catch as err {
         MsgBox "❌ Failed to ban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
@@ -2917,7 +2887,7 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
         catch
         
         RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
     } catch as err {
         MsgBox "❌ Failed to unban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
