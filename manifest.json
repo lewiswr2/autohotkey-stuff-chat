@@ -1,21 +1,18 @@
 {
   "version": "1.0.3",
-  "launcher_version": "1.0.3",
+  "launcher_version": "1.0.0",
   "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
-  "master_key": "A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7",
   "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
-  "webhook": "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_",
   "cred_user": "AHKvaultmacros@discord",
-  "cred_password": "test123",
   "cred_hash": "1849087399",
+  "password_hash": "1849087399",
   "banned_discord_ids": [],
   "admin_discord_ids": [
-    "1247055057489231914"
+    "1247055057489231914",
+    "886398974456655892"
   ],
   "banned_hwids": [],
   "hwid_bindings": {
-    "123123": "1525703921",
-    "123123123": "1525703921",
     "1247055057489231914": "1525703921",
     "886398974456655892": "160377749",
     "785479878845136907": "1508793848",
@@ -33,8 +30,8 @@
   },
   "changelog": [
     "🎉 PUBLIC RELEASE! We're excited to launch version 1.0.0 of our vault!",
-    "This is the very first release. We’d love to hear your feedback, suggestions, and bug reports—join us on Discord and let us know what you think!",
-    "Happy macro’ing and enjoy exploring all the features!",
+    "This is the very first release. We'd love to hear your feedback, suggestions, and bug reports—join us on Discord and let us know what you think!",
+    "Happy macro'ing and enjoy exploring all the features!",
     "Updated RCU woodfarm Macro!",
     "Added ps99 macro Multi Deep Fishing"
   ]

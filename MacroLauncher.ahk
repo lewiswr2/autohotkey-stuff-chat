@@ -87,6 +87,19 @@ CreateGUID() {
     return guid
 }
 
+SetTaskbarIcon() {
+    global ICON_DIR
+    iconPath := ICON_DIR "\Launcher.png"
+    
+    try {
+        if FileExist(iconPath)
+            TraySetIcon(iconPath)
+        else
+            TraySetIcon("shell32.dll", 3)  ; This is showing - file not found
+    } catch {
+    }
+}
+
 ; ========== INITIALIZATION ==========
 InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
@@ -168,19 +181,6 @@ EnsureVersionFile() {
     global VERSION_FILE
     if !FileExist(VERSION_FILE) {
         try FileAppend "0", VERSION_FILE
-    }
-}
-
-SetTaskbarIcon() {
-    global ICON_DIR
-    iconPath := ICON_DIR "\Launcher.png"
-    
-    try {
-        if FileExist(iconPath)
-            TraySetIcon(iconPath)
-        else
-            TraySetIcon("shell32.dll", 3)
-    } catch {
     }
 }
 
@@ -2853,7 +2853,7 @@ OnBanHwid(hwidEdit, bannedHwidLbl, *) {
         catch
         
         RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
     } catch as err {
         MsgBox "❌ Failed to ban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
@@ -2887,7 +2887,7 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
         catch
         
         RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Iconi"
+        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
     } catch as err {
         MsgBox "❌ Failed to unban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
     }
