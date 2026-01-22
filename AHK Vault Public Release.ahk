@@ -128,6 +128,44 @@ InitializeSecureVault() {
     }
 }
 
+CheckLauncherUpdate() {
+    global LAUNCHER_VERSION, MANIFEST_URL
+    
+    try {
+        ; Get manifest
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.Open("GET", MANIFEST_URL, false)
+        req.Send()
+        
+        ; Parse version
+        if RegExMatch(req.ResponseText, '"launcher_version"\s*:\s*"([^"]+)"', &v) {
+            if (v[1] != LAUNCHER_VERSION) {
+                ; Parse URL
+                if RegExMatch(req.ResponseText, '"launcher_url"\s*:\s*"([^"]+)"', &u) {
+                    ; Download
+                    temp := A_Temp "\new.ahk"
+                    Download u[1], temp
+                    
+                    ; Replace & restart
+                    bat := 
+                    (
+                    '@echo off
+                    timeout /t 1 > nul
+                    copy /y "' temp '" "' A_ScriptFullPath '"
+                    start "" "' A_AhkPath '" "' A_ScriptFullPath '"
+                    del "' temp '" & del "%~f0"
+                    '
+                    )
+                    
+                    FileAppend bat, A_Temp "\u.bat"
+                    Run A_Temp "\u.bat", , "Hide"
+                    ExitApp
+                }
+            }
+        }
+    }
+}
+
 EnsureVersionFile() {
     global VERSION_FILE
     if !FileExist(VERSION_FILE) {

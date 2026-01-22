@@ -1042,26 +1042,24 @@ CreateMainGui() {
     btnLog.SetFont("s10")
     btnLog.OnEvent("Click", ShowChangelog)
 
-    ; Utilities Section
     mainGui.Add("Text", "x25 y100 w500 c" COLORS.text, "Utilities").SetFont("s12 bold")
-    mainGui.Add("Text", "x25 y125 w500 h1 Background" COLORS.border)
-    
-    yPos := 145
-    
-    ; Get and create utility buttons
-    utilButtons := GetUtilityButtons()
-    
-    if (utilButtons.Length > 0) {
-        ; Calculate rows needed (4 buttons per row)
-        rowsNeeded := Ceil(utilButtons.Length / 4)
-        CreateUtilityButtonsGrid(mainGui, utilButtons, 25, yPos)
-        yPos += (rowsNeeded * 90) + 20  ; 80px button height + 10px spacing
-    } else {
-        noUtilText := mainGui.Add("Text", "x25 y145 w500 h60 c" COLORS.textDim " Center", 
-            "No utility buttons found`n`nAdd folders with Main.ahk and icon.png to Macros/Buttons/")
-        noUtilText.SetFont("s9")
-        yPos := 215
-    }
+mainGui.Add("Text", "x25 y125 w500 h1 Background" COLORS.border)
+
+yPos := 145
+
+utilButtons := GetUtilityButtons()
+
+if (utilButtons.Length > 0) {
+    rowsNeeded := Ceil(utilButtons.Length / 4)
+    CreateUtilityButtonsGrid(mainGui, utilButtons, 25, yPos)
+    yPos += (rowsNeeded * 100) + 20
+} else {
+    noUtilText := mainGui.Add("Text", 
+        "x25 y" yPos " w500 h60 c" COLORS.textDim " Center", 
+        "No utility buttons found`n`nCreate subfolders in: " BASE_DIR "\Buttons\`nEach with Main.ahk and icon.png")
+    noUtilText.SetFont("s9")
+    yPos += 80
+}
     
     ; Games Section
     mainGui.Add("Text", "x25 y" yPos " w500 c" COLORS.text, "Games").SetFont("s12 bold")
@@ -2920,6 +2918,11 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
     }
 }
 
+MakeUtilityClickHandler(path, name) {
+    ; This creates a new closure that captures the current path and name
+    return (*) => RunUtilityButton(path, name)
+}
+
 GetUtilityButtons() {
     global BASE_DIR
     arr := []
@@ -2929,20 +2932,27 @@ GetUtilityButtons() {
         return arr
     
     try {
-        ; Look for subfolders in Buttons directory
         Loop Files, buttonsDir "\*", "D" {
             folderPath := A_LoopFilePath
             folderName := A_LoopFileName
             
-            ; Check for Main.ahk in this subfolder
             mainFile := folderPath "\Main.ahk"
-            iconFile := folderPath "\icon.png"
             
             if FileExist(mainFile) {
+                ; Check for icon with multiple extensions
+                iconFile := ""
+                for ext in ["png", "ico", "jpg", "jpeg"] {
+                    testPath := folderPath "\icon." ext
+                    if FileExist(testPath) {
+                        iconFile := testPath
+                        break
+                    }
+                }
+                
                 arr.Push({
                     name: folderName,
                     path: mainFile,
-                    icon: FileExist(iconFile) ? iconFile : ""
+                    icon: iconFile
                 })
             }
         }
@@ -2958,61 +2968,81 @@ CreateUtilityButtonsGrid(gui, buttons, x, y) {
         return
     
     buttonWidth := 115
-    buttonHeight := 80  ; Increased height for icon + text
+    buttonHeight := 90
     spacing := 10
     
     xPos := x
     yPos := y
+    col := 0
     
-    for btn in buttons {
-        currentPath := btn.path
-        currentName := btn.name
-        currentIcon := btn.icon
+    for index, btn in buttons {
+        ; Store values in local variables that will be properly captured
+        btnPath := btn.path
+        btnName := btn.name
+        btnIcon := btn.icon
         
-        ; Create container for each button
-        containerX := xPos
-        containerY := yPos
+        ; Background card
+        card := gui.Add("Text", 
+            "x" xPos " y" yPos " w" buttonWidth " h" buttonHeight 
+            " Background" COLORS.card " Border")
         
-        ; Create button background
-        utilBtn := gui.Add("Button", 
-            "x" containerX " y" containerY " w" buttonWidth " h" buttonHeight 
-            " Background" COLORS.card)
-        utilBtn.OnEvent("Click", (*) => RunUtilityButton(currentPath, currentName))
+        ; Icon or badge centered
+        iconY := yPos + 12
+        iconX := xPos + (buttonWidth - 48) // 2
         
-        ; Add icon if available
-        if (currentIcon != "" && FileExist(currentIcon)) {
+        hasIcon := false
+        if (btnIcon != "" && FileExist(btnIcon)) {
             try {
-                iconCtrl := gui.Add("Picture", 
-                    "x" (containerX + (buttonWidth - 40) / 2) 
-                    " y" (containerY + 8) 
-                    " w40 h40 BackgroundTrans", 
-                    currentIcon)
-            } catch {
-                ; If icon fails, create text badge
-                CreateUtilityBadge(gui, currentName, 
-                    containerX + (buttonWidth - 40) / 2, 
-                    containerY + 8, 40)
+                pic := gui.Add("Picture", 
+                    "x" iconX " y" iconY 
+                    " w48 h48 BackgroundTrans", 
+                    btnIcon)
+                hasIcon := true
             }
-        } else {
-            ; Create text badge if no icon
-            CreateUtilityBadge(gui, currentName, 
-                containerX + (buttonWidth - 40) / 2, 
-                containerY + 8, 40)
         }
         
-        ; Add label below icon
-        displayName := FormatUtilityName(currentName)
-        labelCtrl := gui.Add("Text", 
-            "x" containerX " y" (containerY + 52) 
-            " w" buttonWidth " h24 c" COLORS.text 
+        if (!hasIcon) {
+            initial := SubStr(btnName, 1, 1)
+            colorOptions := ["0x1f6feb", "0x238636", "0x8957e5", "0xd29922", "0xbc4c00"]
+            randColor := colorOptions[Mod(index, colorOptions.Length) + 1]
+            
+            badge := gui.Add("Text", 
+                "x" iconX " y" iconY 
+                " w48 h48 Background" randColor " Center", 
+                initial)
+            badge.SetFont("s20 bold c" COLORS.text)
+        }
+        
+        ; Name label below icon
+        displayName := FormatUtilityName(btnName)
+        labelY := yPos + 65
+        
+        label := gui.Add("Text", 
+            "x" xPos " y" labelY 
+            " w" buttonWidth " h22 c" COLORS.text 
             " BackgroundTrans Center", 
             displayName)
-        labelCtrl.SetFont("s8 bold")
+        label.SetFont("s8 bold")
         
+        ; Create click handler with proper closure
+        ; This captures btnPath and btnName at THIS iteration
+        clickBtn := gui.Add("Button", 
+            "x" xPos " y" yPos 
+            " w" buttonWidth " h" buttonHeight, 
+            "")
+        clickBtn.Opt("Background" COLORS.card)
+        clickBtn.Opt("+0x4000000")  ; BS_FLAT style
+        
+        ; Use a function that creates a new closure for each button
+        clickBtn.OnEvent("Click", MakeUtilityClickHandler(btnPath, btnName))
+        
+        ; Move to next column
+        col++
         xPos += buttonWidth + spacing
         
         ; Wrap to next row after 4 buttons
-        if (Mod(A_Index, 4) = 0) {
+        if (col >= 4) {
+            col := 0
             xPos := x
             yPos += buttonHeight + spacing
         }
@@ -3060,13 +3090,18 @@ RunUtilityButton(path, name) {
     
     try {
         SplitPath path, , &dir
+        
+        ; Show tooltip with the actual name
+        ToolTip "▶ Running: " name
+        
+        ; Run the utility
         Run '"' A_AhkPath '" "' path '"', dir
         
-        ; Show confirmation
-        ToolTip "Running " name "..."
-        SetTimer () => ToolTip(), -2000
+        ; Clear tooltip after 1.5 seconds
+        SetTimer () => ToolTip(), -1500
     } catch as err {
-        MsgBox "Failed to run utility: " err.Message, "Error", "Icon!"
+        ToolTip  ; Clear tooltip on error
+        MsgBox "Failed to run utility: " err.Message "`n`nPath: " path "`n`nWorking Dir: " dir, "Error", "Icon!"
     }
 }
 
