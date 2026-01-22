@@ -1006,7 +1006,8 @@ CreateMainGui() {
     mainGui.BackColor := COLORS.bg
     mainGui.SetFont("s10", "Segoe UI")
     
-    iconPath := ICON_DIR "\1.png"
+    ; Set window icon
+    iconPath := ICON_DIR "\Launcher.png"
     if FileExist(iconPath) {
         try {
             mainGui.Show("Hide")
@@ -1014,8 +1015,10 @@ CreateMainGui() {
         }
     }
     
+    ; Header
     mainGui.Add("Text", "x0 y0 w550 h80 Background" COLORS.accent)
     
+    ; Launcher logo
     launcherImage := ICON_DIR "\Launcher.png"
     if FileExist(launcherImage) {
         try {
@@ -1026,6 +1029,7 @@ CreateMainGui() {
     titleText := mainGui.Add("Text", "x85 y17 w280 h100 c" COLORS.text " BackgroundTrans", " AHK Vault")
     titleText.SetFont("s24 bold")
 
+    ; Header buttons
     btnNuke := mainGui.Add("Button", "x290 y25 w75 h35 Background" COLORS.danger, "Uninstall")
     btnNuke.SetFont("s9")
     btnNuke.OnEvent("Click", CompleteUninstall)
@@ -1038,20 +1042,42 @@ CreateMainGui() {
     btnLog.SetFont("s10")
     btnLog.OnEvent("Click", ShowChangelog)
 
-    mainGui.Add("Text", "x25 y100 w500 c" COLORS.text, "Games").SetFont("s12 bold")
+    ; Utilities Section
+    mainGui.Add("Text", "x25 y100 w500 c" COLORS.text, "Utilities").SetFont("s12 bold")
     mainGui.Add("Text", "x25 y125 w500 h1 Background" COLORS.border)
     
-    categories := GetCategories()
     yPos := 145
+    
+    ; Get and create utility buttons
+    utilButtons := GetUtilityButtons()
+    
+    if (utilButtons.Length > 0) {
+        ; Calculate rows needed (4 buttons per row)
+        rowsNeeded := Ceil(utilButtons.Length / 4)
+        CreateUtilityButtonsGrid(mainGui, utilButtons, 25, yPos)
+        yPos += (rowsNeeded * 90) + 20  ; 80px button height + 10px spacing
+    } else {
+        noUtilText := mainGui.Add("Text", "x25 y145 w500 h60 c" COLORS.textDim " Center", 
+            "No utility buttons found`n`nAdd folders with Main.ahk and icon.png to Macros/Buttons/")
+        noUtilText.SetFont("s9")
+        yPos := 215
+    }
+    
+    ; Games Section
+    mainGui.Add("Text", "x25 y" yPos " w500 c" COLORS.text, "Games").SetFont("s12 bold")
+    mainGui.Add("Text", "x25 y" (yPos + 25) " w500 h1 Background" COLORS.border)
+    
+    categories := GetCategories()
+    yPos += 45
     xPos := 25
     cardWidth := 500
     cardHeight := 70
     
     if (categories.Length = 0) {
-        noGameText := mainGui.Add("Text", "x25 y145 w500 h120 c" COLORS.textDim " Center", 
+        noGameText := mainGui.Add("Text", "x25 y" yPos " w500 h120 c" COLORS.textDim " Center", 
             "No game categories found`n`nPlace game folders in the secure vault")
         noGameText.SetFont("s10")
-        yPos := 275
+        yPos += 120
     } else {
         for category in categories {
             CreateCategoryCard(mainGui, category, xPos, yPos, cardWidth, cardHeight)
@@ -1059,13 +1085,7 @@ CreateMainGui() {
         }
     }
     
-    bottomY := yPos + 15
-    mainGui.Add("Text", "x0 y" bottomY " w550 h1 Background" COLORS.border)
-    
-    linkY := bottomY + 15
-    CreateLink(mainGui, "Discord", "https://discord.gg/PQ85S32Ht8", 25, linkY)
-    
-    mainGui.Show("w550 h" (bottomY + 60) " Center")
+    mainGui.Show("w550 h" (yPos + 20) " Center")
 }
 
 GetCategories() {
@@ -1077,7 +1097,9 @@ GetCategories() {
     
     try {
         Loop Files, BASE_DIR "\*", "D" {
-            if (StrLower(A_LoopFileName) = "icons")
+            folderName := StrLower(A_LoopFileName)
+            ; Exclude icons and utility buttons folder from game categories
+            if (folderName = "icons" || folderName = "buttons")
                 continue
             arr.Push(A_LoopFileName)
         }
@@ -1131,20 +1153,23 @@ GetGameIcon(category) {
     
     extensions := ["png", "ico", "jpg", "jpeg"]
     
+    ; First check ICON_DIR
     for ext in extensions {
         iconPath := ICON_DIR "\" category "." ext
         if FileExist(iconPath)
             return iconPath
     }
     
+    ; Then check category folder root
     for ext in extensions {
-        iconPath := BASE_DIR "\" category "." ext
+        iconPath := BASE_DIR "\" category "\icon." ext
         if FileExist(iconPath)
             return iconPath
     }
     
+    ; Check for category name as filename
     for ext in extensions {
-        iconPath := BASE_DIR "\" category "\icon." ext
+        iconPath := BASE_DIR "\" category "\" category "." ext
         if FileExist(iconPath)
             return iconPath
     }
@@ -1597,21 +1622,23 @@ GetMacroIcon(macroPath) {
         
         extensions := ["png", "ico", "jpg", "jpeg"]
         
+        ; Check ICON_DIR first
         for ext in extensions {
             iconPath := ICON_DIR "\" macroName "." ext
             if FileExist(iconPath)
                 return iconPath
         }
         
+        ; Check macro folder for icon.png
         for ext in extensions {
             iconPath := macroDir "\icon." ext
             if FileExist(iconPath)
                 return iconPath
         }
         
-        SplitPath macroDir, , &gameDir
+        ; Check for macro name as filename
         for ext in extensions {
-            iconPath := gameDir "\" macroName "." ext
+            iconPath := macroDir "\" macroName "." ext
             if FileExist(iconPath)
                 return iconPath
         }
@@ -2890,6 +2917,156 @@ OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
         MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
     } catch as err {
         MsgBox "❌ Failed to unban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
+    }
+}
+
+GetUtilityButtons() {
+    global BASE_DIR
+    arr := []
+    buttonsDir := BASE_DIR "\Buttons"
+    
+    if !DirExist(buttonsDir)
+        return arr
+    
+    try {
+        ; Look for subfolders in Buttons directory
+        Loop Files, buttonsDir "\*", "D" {
+            folderPath := A_LoopFilePath
+            folderName := A_LoopFileName
+            
+            ; Check for Main.ahk in this subfolder
+            mainFile := folderPath "\Main.ahk"
+            iconFile := folderPath "\icon.png"
+            
+            if FileExist(mainFile) {
+                arr.Push({
+                    name: folderName,
+                    path: mainFile,
+                    icon: FileExist(iconFile) ? iconFile : ""
+                })
+            }
+        }
+    }
+    
+    return arr
+}
+
+CreateUtilityButtonsGrid(gui, buttons, x, y) {
+    global COLORS
+    
+    if (buttons.Length = 0)
+        return
+    
+    buttonWidth := 115
+    buttonHeight := 80  ; Increased height for icon + text
+    spacing := 10
+    
+    xPos := x
+    yPos := y
+    
+    for btn in buttons {
+        currentPath := btn.path
+        currentName := btn.name
+        currentIcon := btn.icon
+        
+        ; Create container for each button
+        containerX := xPos
+        containerY := yPos
+        
+        ; Create button background
+        utilBtn := gui.Add("Button", 
+            "x" containerX " y" containerY " w" buttonWidth " h" buttonHeight 
+            " Background" COLORS.card)
+        utilBtn.OnEvent("Click", (*) => RunUtilityButton(currentPath, currentName))
+        
+        ; Add icon if available
+        if (currentIcon != "" && FileExist(currentIcon)) {
+            try {
+                iconCtrl := gui.Add("Picture", 
+                    "x" (containerX + (buttonWidth - 40) / 2) 
+                    " y" (containerY + 8) 
+                    " w40 h40 BackgroundTrans", 
+                    currentIcon)
+            } catch {
+                ; If icon fails, create text badge
+                CreateUtilityBadge(gui, currentName, 
+                    containerX + (buttonWidth - 40) / 2, 
+                    containerY + 8, 40)
+            }
+        } else {
+            ; Create text badge if no icon
+            CreateUtilityBadge(gui, currentName, 
+                containerX + (buttonWidth - 40) / 2, 
+                containerY + 8, 40)
+        }
+        
+        ; Add label below icon
+        displayName := FormatUtilityName(currentName)
+        labelCtrl := gui.Add("Text", 
+            "x" containerX " y" (containerY + 52) 
+            " w" buttonWidth " h24 c" COLORS.text 
+            " BackgroundTrans Center", 
+            displayName)
+        labelCtrl.SetFont("s8 bold")
+        
+        xPos += buttonWidth + spacing
+        
+        ; Wrap to next row after 4 buttons
+        if (Mod(A_Index, 4) = 0) {
+            xPos := x
+            yPos += buttonHeight + spacing
+        }
+    }
+}
+
+CreateUtilityBadge(gui, name, x, y, size := 40) {
+    global COLORS
+    
+    initial := SubStr(name, 1, 1)
+    iconColor := GetCategoryColor(name)
+    
+    badge := gui.Add("Text", 
+        "x" x " y" y " w" size " h" size 
+        " Background" iconColor " Center", 
+        initial)
+    badge.SetFont("s18 bold c" COLORS.text)
+    
+    return badge
+}
+
+FormatUtilityName(name) {
+    ; Convert filename to nice display name
+    ; Example: "RestoreFont" -> "Restore Font"
+    
+    ; Add spaces before capital letters
+    result := RegExReplace(name, "([a-z])([A-Z])", "$1 $2")
+    
+    ; Handle common abbreviations
+    result := StrReplace(result, "Ahk", "AHK")
+    result := StrReplace(result, "Gui", "GUI")
+    
+    ; Limit length for button display
+    if (StrLen(result) > 15)
+        result := SubStr(result, 1, 12) "..."
+    
+    return result
+}
+
+RunUtilityButton(path, name) {
+    if !FileExist(path) {
+        MsgBox "Utility not found:`n" path, "Error", "Icon!"
+        return
+    }
+    
+    try {
+        SplitPath path, , &dir
+        Run '"' A_AhkPath '" "' path '"', dir
+        
+        ; Show confirmation
+        ToolTip "Running " name "..."
+        SetTimer () => ToolTip(), -2000
+    } catch as err {
+        MsgBox "Failed to run utility: " err.Message, "Error", "Icon!"
     }
 }
 
