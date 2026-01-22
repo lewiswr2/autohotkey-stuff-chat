@@ -8,6 +8,7 @@ global LAUNCHER_VERSION := "1.0.0"
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global SESSION_TOKEN_FILE := ""
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
+global WEBHOOK_URL := ""
 
 ; Credential & Session Files (kept for compatibility, but no master key stored)
 global DISCORD_ID_FILE := ""
@@ -52,6 +53,7 @@ global COLORS := {
 ; =========================================
 InitializeSecureVault()
 SetTaskbarIcon()
+CheckLoginAppUpdate()
 
 did := ReadDiscordId()
 CheckLockout()
@@ -125,6 +127,143 @@ InitializeSecureVault() {
     ; Extract MacroLauncher if it doesn't exist
     if !FileExist(MACRO_LAUNCHER_PATH) {
         ExtractMacroLauncher()
+        LoadWebhookUrl()
+        ; ADD THIS DEBUG CODE:
+if (WEBHOOK_URL = "") {
+    MsgBox "⚠️ WEBHOOK_URL is EMPTY!`n`nWebhook notifications will not work.", "Debug", "Icon! T5000"
+} else {
+    MsgBox "✅ Webhook loaded:`n`n" WEBHOOK_URL, "Debug", "Iconi T5000"
+}
+; END DEBUG CODE
+    }
+}
+
+; ========== WEBHOOK FUNCTIONS ==========
+
+LoadWebhookUrl() {
+    global WEBHOOK_URL, MANIFEST_URL
+    
+    try {
+        tmpManifest := A_Temp "\manifest_webhook.json"
+        
+        if SafeDownload(MANIFEST_URL, tmpManifest, 10000) {
+            json := FileRead(tmpManifest, "UTF-8")
+            
+            if RegExMatch(json, '"webhook_url"\s*:\s*"([^"]+)"', &m) {
+                WEBHOOK_URL := Trim(m[1])
+            }
+            
+            try FileDelete tmpManifest
+        }
+    } catch {
+    }
+}
+
+SendWebhook(title, description, color := 3447003, fields := "") {
+    global WEBHOOK_URL
+    
+    ; ADD THIS DEBUG
+    if (WEBHOOK_URL = "") {
+        MsgBox "Cannot send webhook - WEBHOOK_URL is empty!", "Debug", "Icon!"
+        return false
+    }
+    ; END DEBUG
+    
+    try {
+        timestamp := FormatTime(, "yyyy-MM-ddTHH:mm:ssZ")
+        
+        embed := '{"embeds":[{"title":"' JsonEscape(title) '","description":"' JsonEscape(description) '","color":' color ',"timestamp":"' timestamp '"'
+        
+        if (fields != "") {
+            embed .= ',"fields":[' fields ']'
+        }
+        
+        embed .= ',"footer":{"text":"AHK Vault Login System"}}]}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(3000, 3000, 3000, 3000)
+        req.Open("POST", WEBHOOK_URL, false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(embed)
+        
+        ; ADD THIS DEBUG
+        MsgBox "✅ Webhook sent!`nStatus: " req.Status, "Debug", "Iconi T2000"
+        ; END DEBUG
+        
+        return true
+    } catch as err {
+        ; ADD THIS DEBUG
+        MsgBox "❌ Webhook error:`n`n" err.Message, "Debug", "Icon!"
+        ; END DEBUG
+        return false
+    }
+}
+
+SendLoginSuccessNotification(username, discordId) {
+    computerName := A_ComputerName
+    userName := A_UserName
+    hwid := GetHardwareId()
+    ip := GetPublicIP()
+    
+    fields := '{"name":"Username","value":"' JsonEscape(username) '","inline":true},'
+            . '{"name":"Discord ID","value":"' discordId '","inline":true},'
+            . '{"name":"Computer","value":"' computerName '","inline":true},'
+            . '{"name":"User","value":"' userName '","inline":true},'
+            . '{"name":"HWID","value":"' hwid '","inline":true},'
+            . '{"name":"IP Address","value":"' ip '","inline":true}'
+    
+    SendWebhook("✅ Login Successful", username " logged in successfully", 3066993, fields)
+}
+
+SendLoginFailNotification(username, reason) {
+    computerName := A_ComputerName
+    userName := A_UserName
+    hwid := GetHardwareId()
+    ip := GetPublicIP()
+    
+    fields := '{"name":"Username","value":"' JsonEscape(username) '","inline":true},'
+            . '{"name":"Reason","value":"' JsonEscape(reason) '","inline":true},'
+            . '{"name":"Computer","value":"' computerName '","inline":true},'
+            . '{"name":"User","value":"' userName '","inline":true},'
+            . '{"name":"HWID","value":"' hwid '","inline":true},'
+            . '{"name":"IP Address","value":"' ip '","inline":true}'
+    
+    SendWebhook("❌ Login Failed", "Failed login attempt", 15158332, fields)
+}
+
+SendBanNotification(discordId, hwid, reason := "banned") {
+    computerName := A_ComputerName
+    
+    fields := '{"name":"Discord ID","value":"' discordId '","inline":true},'
+            . '{"name":"HWID","value":"' hwid '","inline":true},'
+            . '{"name":"Reason","value":"' JsonEscape(reason) '","inline":true},'
+            . '{"name":"Computer","value":"' computerName '","inline":true}'
+    
+    SendWebhook("🚫 Account Banned", "User attempted to access while banned", 15158332, fields)
+}
+
+SendLockoutNotification(username) {
+    computerName := A_ComputerName
+    userName := A_UserName
+    ip := GetPublicIP()
+    
+    fields := '{"name":"Username","value":"' JsonEscape(username) '","inline":true},'
+            . '{"name":"Computer","value":"' computerName '","inline":true},'
+            . '{"name":"User","value":"' userName '","inline":true},'
+            . '{"name":"IP Address","value":"' ip '","inline":true}'
+    
+    SendWebhook("🔒 Account Locked", "Too many failed login attempts - account locked for 30 minutes", 15105570, fields)
+}
+
+GetPublicIP() {
+    try {
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(3000, 3000, 3000, 3000)
+        req.Open("GET", "https://api.ipify.org", false)
+        req.Send()
+        return Trim(req.ResponseText)
+    } catch {
+        return "Unknown"
     }
 }
 
@@ -166,6 +305,173 @@ CheckLauncherUpdate() {
     }
 }
 
+CheckLoginAppUpdate() {
+    global LAUNCHER_VERSION, MANIFEST_URL
+    
+    try {
+        ; Download manifest
+        tmpManifest := A_Temp "\manifest_update_check.json"
+        
+        if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmpManifest, 15000) {
+            return  ; Silently fail - don't block app launch
+        }
+        
+        ; Parse manifest
+        json := ""
+        try {
+            json := FileRead(tmpManifest, "UTF-8")
+        } catch {
+            return
+        }
+        
+        ; Extract launcher_version and login_url
+        manifestVersion := ""
+        loginUrl := ""
+        
+        if RegExMatch(json, '"launcher_version"\s*:\s*"([^"]+)"', &v) {
+            manifestVersion := Trim(v[1])
+        }
+        
+        if RegExMatch(json, '"login_url"\s*:\s*"([^"]+)"', &u) {
+            loginUrl := Trim(u[1])
+        }
+        
+        ; Check if update needed
+        if (manifestVersion = "" || loginUrl = "") {
+            return  ; Missing data, skip update
+        }
+        
+        if (VersionCompare(manifestVersion, LAUNCHER_VERSION) <= 0) {
+            return  ; Already up to date
+        }
+        
+        ; ===== UPDATE AVAILABLE =====
+        choice := MsgBox(
+            "🔄 Login App Update Available!`n`n"
+            . "Current: v" LAUNCHER_VERSION "`n"
+            . "Latest: v" manifestVersion "`n`n"
+            . "Update now? (Recommended)",
+            "AHK Vault - Update Available",
+            "YesNo Iconi"
+        )
+        
+        if (choice = "No") {
+            return
+        }
+        
+        ; Download new version
+        tmpUpdate := A_Temp "\AHK_Vault_Update.ahk"
+        
+        ToolTip "Downloading update..."
+        
+        if !SafeDownload(loginUrl, tmpUpdate, 30000) {
+            ToolTip
+            MsgBox "Update download failed. Continuing with current version.", "Update Failed", "Icon!"
+            return
+        }
+        
+        ToolTip
+        
+        ; Validate downloaded file
+        try {
+            content := FileRead(tmpUpdate, "UTF-8")
+            
+            if (StrLen(content) < 1000) {
+                throw Error("Downloaded file too small")
+            }
+            
+            if (!InStr(content, "#Requires AutoHotkey v2.0")) {
+                throw Error("Not a valid AHK v2 script")
+            }
+            
+            if (!InStr(content, "LAUNCHER_VERSION")) {
+                throw Error("Not the login app")
+            }
+        } catch as err {
+            MsgBox "Update validation failed: " err.Message "`n`nContinuing with current version.", "Update Failed", "Icon!"
+            try FileDelete tmpUpdate
+            return
+        }
+        
+        ; ===== APPLY UPDATE =====
+        try {
+            currentScript := A_ScriptFullPath
+            backupScript := A_ScriptDir "\AHK_Vault_Login_BACKUP.ahk"
+            
+            ; Create backup of current version
+            if FileExist(currentScript) {
+                FileCopy currentScript, backupScript, 1
+            }
+            
+            ; Create batch file to replace script and restart
+            batFile := A_Temp "\update_login.bat"
+            batContent := 
+            (
+            '@echo off
+            echo Updating AHK Vault Login...
+            timeout /t 2 /nobreak >nul
+            copy /y "' tmpUpdate '" "' currentScript '"
+            timeout /t 1 /nobreak >nul
+            start "" "' A_AhkPath '" "' currentScript '"
+            del "' tmpUpdate '"
+            del "%~f0"
+            '
+            )
+            
+            if FileExist(batFile)
+                FileDelete batFile
+            FileAppend batContent, batFile
+            
+            ; Show update message
+            MsgBox (
+                "✅ Update downloaded successfully!`n`n"
+                . "The app will restart now to apply the update.`n`n"
+                . "New version: v" manifestVersion
+            ), "Update Ready", "Iconi T3000"
+            
+            ; Run update batch and exit
+            Run batFile, , "Hide"
+            Sleep 500
+            ExitApp
+            
+        } catch as err {
+            MsgBox "Failed to apply update: " err.Message "`n`nContinuing with current version.", "Update Failed", "Icon!"
+            
+            ; Cleanup
+            try FileDelete tmpUpdate
+            try FileDelete batFile
+        }
+        
+    } catch as err {
+        ; Silent fail - don't interrupt app launch
+    }
+}
+
+VersionCompare(a, b) {
+    a := RegExReplace(a, "[^0-9.]", "")
+    b := RegExReplace(b, "[^0-9.]", "")
+    
+    pa := StrSplit(a, ".")
+    pb := StrSplit(b, ".")
+    
+    Loop Max(pa.Length, pb.Length) {
+        va := pa.Has(A_Index) ? Integer(pa[A_Index]) : 0
+        vb := pb.Has(A_Index) ? Integer(pb[A_Index]) : 0
+        
+        if (va > vb)
+            return 1
+        if (va < vb)
+            return -1
+    }
+    
+    return 0
+}
+
+NoCacheUrl(url) {
+    separator := InStr(url, "?") ? "&" : "?"
+    return url . separator . "nocache=" . A_TickCount
+}
+
 EnsureVersionFile() {
     global VERSION_FILE
     if !FileExist(VERSION_FILE) {
@@ -174,11 +480,92 @@ EnsureVersionFile() {
 }
 
 ExtractMacroLauncher() {
-    global MACRO_LAUNCHER_PATH
-    ; Placeholder - in production, this would extract embedded launcher
+    global MACRO_LAUNCHER_PATH, MANIFEST_URL, WORKER_URL
+    
     try {
-        FileAppend "; MacroLauncher placeholder", MACRO_LAUNCHER_PATH
-    } catch {
+        ; Step 1: Download manifest to get launcher URL
+        tmpManifest := A_Temp "\manifest_launcher.json"
+        
+        if !SafeDownload(MANIFEST_URL, tmpManifest, 15000) {
+            MsgBox "Failed to download manifest for launcher.`n`nCheck internet connection.", "Download Error", "Icon!"
+            return false
+        }
+        
+        ; Step 2: Parse manifest to get launcher_url
+        json := ""
+        try {
+            json := FileRead(tmpManifest, "UTF-8")
+        } catch {
+            MsgBox "Failed to read manifest file.", "Error", "Icon!"
+            return false
+        }
+        
+        launcherUrl := ""
+        
+        ; Try to extract launcher_url from manifest
+        if RegExMatch(json, '"launcher_url"\s*:\s*"([^"]+)"', &m) {
+            launcherUrl := m[1]
+        }
+        
+        ; If not in manifest, construct from worker URL
+        if (launcherUrl = "") {
+            launcherUrl := WORKER_URL "/download/launcher"
+        }
+        
+        ; Step 3: Download MacroLauncher.ahk
+        tmpLauncher := A_Temp "\MacroLauncher_Download.ahk"
+        
+        ToolTip "Downloading MacroLauncher..."
+        
+        if !SafeDownload(launcherUrl, tmpLauncher, 30000) {
+            ToolTip
+            MsgBox "Failed to download MacroLauncher.ahk`n`nURL: " launcherUrl, "Download Error", "Icon!"
+            return false
+        }
+        
+        ToolTip
+        
+        ; Step 4: Verify downloaded file is valid AHK
+        try {
+            content := FileRead(tmpLauncher, "UTF-8")
+            
+            ; Check if it's actually an AHK script (must contain #Requires or ; comment at start)
+            if (StrLen(content) < 100) {
+                throw Error("File too small")
+            }
+            
+            if (!InStr(content, "#Requires") && !InStr(content, "global") && !InStr(content, "Gui(")) {
+                throw Error("Not a valid AHK script")
+            }
+        } catch as err {
+            MsgBox "Downloaded file is not a valid AHK script:`n`n" err.Message, "Validation Error", "Icon!"
+            return false
+        }
+        
+        ; Step 5: Move to secure vault location
+        try {
+            if FileExist(MACRO_LAUNCHER_PATH)
+                FileDelete MACRO_LAUNCHER_PATH
+            
+            FileCopy tmpLauncher, MACRO_LAUNCHER_PATH, 1
+            
+            ; Cleanup temp file
+            if FileExist(tmpLauncher)
+                FileDelete tmpLauncher
+            if FileExist(tmpManifest)
+                FileDelete tmpManifest
+            
+        } catch as err {
+            MsgBox "Failed to install MacroLauncher:`n`n" err.Message, "Installation Error", "Icon!"
+            return false
+        }
+        
+        return true
+        
+    } catch as err {
+        ToolTip
+        MsgBox "MacroLauncher extraction failed:`n`n" err.Message, "Error", "Icon!"
+        return false
     }
 }
 
@@ -821,19 +1208,15 @@ SafeDownload(url, out, timeoutMs := 10000) {
         if FileExist(out)
             FileDelete out
         
-        ToolTip "Downloading..."
         Download url, out
         
         startTime := A_TickCount
         while !FileExist(out) {
             if (A_TickCount - startTime > timeoutMs) {
-                ToolTip
                 return false
             }
             Sleep 100
         }
-        
-        ToolTip
         
         fileSize := 0
         Loop Files, out
@@ -846,7 +1229,6 @@ SafeDownload(url, out, timeoutMs := 10000) {
         
         return true
     } catch {
-        ToolTip
         return false
     }
 }
@@ -884,7 +1266,7 @@ CreateLoginGui() {
     ; Login Card
     loginGui.Add("Text", "x50 y100 w400 h250 Background" COLORS.card)
     
-    loginGui.Add("Text", "x70 y120 w360 Center c" COLORS.text " BackgroundTrans", "Welcome Back").SetFont("s14 bold")
+    loginGui.Add("Text", "x70 y120 w360 h100 Center c" COLORS.text " BackgroundTrans", "Welcome Back").SetFont("s14 bold")
     loginGui.Add("Text", "x70 y150 w360 Center c" COLORS.textDim " BackgroundTrans", "Enter your credentials to continue")
     
     ; Username field
@@ -921,14 +1303,14 @@ CreateLoginGui() {
 
 AttemptLogin(username, password, statusControl) {
     global SESSION_TOKEN_FILE, MAX_ATTEMPTS, LOCKOUT_FILE
-    
+
+    SendBanNotification(ReadDiscordId(), GetHardwareId(), "viewing_ban_screen")
     if (Trim(username) = "" || Trim(password) = "") {
         statusControl.Value := "Please enter both username and password"
         SoundBeep(700, 120)
         return
     }
     
-    ; Track failed attempts
     static attemptCount := 0
     
     statusControl.Value := "Authenticating..."
@@ -946,6 +1328,7 @@ AttemptLogin(username, password, statusControl) {
         if RegExMatch(resp, '"error"\s*:\s*"banned"') {
             statusControl.Value := "Account is banned"
             SoundBeep(500, 200)
+            SendBanNotification(discordId, hwid, "login_attempt_while_banned")
             Sleep 1500
             ShowBanMessage()
             return
@@ -953,11 +1336,9 @@ AttemptLogin(username, password, statusControl) {
         
         ; Check if successful
         if RegExMatch(resp, '"success"\s*:\s*true') {
-            ; Extract session token
             if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &match) {
                 sessionToken := match[1]
                 
-                ; Save session token
                 try {
                     if FileExist(SESSION_TOKEN_FILE)
                         FileDelete SESSION_TOKEN_FILE
@@ -972,10 +1353,11 @@ AttemptLogin(username, password, statusControl) {
                 SoundBeep(1000, 100)
                 Sleep 500
                 
-                ; Reset attempt counter
                 attemptCount := 0
                 
-                ; Close login GUI and launch main app
+                ; Send success webhook
+                SendLoginSuccessNotification(username, discordId)
+                
                 DestroyLoginGui()
                 StartSessionWatchdog()
                 LaunchMainApp()
@@ -986,9 +1368,14 @@ AttemptLogin(username, password, statusControl) {
         ; Login failed
         attemptCount++
         
+        ; Send fail webhook
+        SendLoginFailNotification(username, "Invalid credentials (Attempt " attemptCount "/" MAX_ATTEMPTS ")")
+        
         if (attemptCount >= MAX_ATTEMPTS) {
-            ; Lock out user
             try FileAppend A_Now, LOCKOUT_FILE
+            
+            SendLockoutNotification(username)
+            
             statusControl.Value := "Too many failed attempts - locked for 30 minutes"
             SoundBeep(500, 300)
             Sleep 2000
@@ -1001,6 +1388,7 @@ AttemptLogin(username, password, statusControl) {
     } catch as err {
         statusControl.Value := "Connection error: " err.Message
         SoundBeep(500, 200)
+        SendLoginFailNotification(username, "Connection error: " err.Message)
     }
 }
 
@@ -1017,16 +1405,55 @@ DestroyLoginGui() {
 LaunchMainApp() {
     global MACRO_LAUNCHER_PATH
     
+    ; Step 1: Check if MacroLauncher exists
     if !FileExist(MACRO_LAUNCHER_PATH) {
-        MsgBox "MacroLauncher not found. Please reinstall.", "Error", "Icon!"
-        ExitApp
+        MsgBox "MacroLauncher not found. Downloading now...", "First Time Setup", "Iconi T3000"
+        
+        if !ExtractMacroLauncher() {
+            MsgBox "Failed to download MacroLauncher.`n`nPlease check your internet connection and try again.", "Setup Failed", "Icon!"
+            ExitApp
+        }
     }
     
+    ; Step 2: Verify file is valid before launching
+    try {
+        content := FileRead(MACRO_LAUNCHER_PATH, "UTF-8")
+        
+        if (StrLen(content) < 100) {
+            ; File is corrupted, re-download
+            MsgBox "MacroLauncher file is corrupted. Re-downloading...", "Repair", "Icon! T3000"
+            
+            if !ExtractMacroLauncher() {
+                MsgBox "Re-download failed. Please reinstall the application.", "Error", "Icon!"
+                ExitApp
+            }
+        }
+    } catch {
+        MsgBox "Cannot read MacroLauncher file. Re-downloading...", "Repair", "Icon! T3000"
+        
+        if !ExtractMacroLauncher() {
+            MsgBox "Re-download failed. Please reinstall the application.", "Error", "Icon!"
+            ExitApp
+        }
+    }
+    
+    ; Step 3: Launch MacroLauncher
     try {
         Run '"' A_AhkPath '" "' MACRO_LAUNCHER_PATH '"'
+        
+        ; Give launcher time to start
+        Sleep 1000
+        
+        ; Exit login app
         ExitApp
+        
     } catch as err {
-        MsgBox "Failed to launch main application: " err.Message, "Error", "Icon!"
+        MsgBox (
+            "Failed to launch MacroLauncher.ahk`n`n"
+            . "Error: " err.Message "`n`n"
+            . "Path: " MACRO_LAUNCHER_PATH "`n`n"
+            . "AHK Path: " A_AhkPath
+        ), "Launch Error", "Icon!"
         ExitApp
     }
 }

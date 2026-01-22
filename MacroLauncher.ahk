@@ -1,4 +1,4 @@
-#Requires AutoHotkey v2.0
+﻿#Requires AutoHotkey v2.0
 #SingleInstance Force
 #NoTrayIcon
 
@@ -7,41 +7,17 @@ global LAUNCHER_VERSION := "2.1.0"
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global SESSION_TOKEN_FILE := A_Temp "\.session_token"
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
-
-; Credential & Session Files
-global CRED_FILE := ""
-global SESSION_FILE := ""
-global DISCORD_ID_FILE := ""
-global DISCORD_BAN_FILE := ""
-global ADMIN_DISCORD_FILE := ""
-global SESSION_LOG_FILE := ""
-global MACHINE_BAN_FILE := ""
-global HWID_BINDING_FILE := ""
-global LAST_CRED_HASH_FILE := ""
-global HWID_BAN_FILE := ""
-
-; Master Credentials
-global SECURE_CONFIG_FILE := ""
-global ENCRYPTED_KEY_FILE := ""
-global MASTER_KEY_ROTATION_FILE := ""
-
-; Login Settings
-global DEFAULT_USER := "AHKvaultmacros@discord"
-global MASTER_USER := "master"
-global MAX_ATTEMPTS := 10
-global LOCKOUT_FILE := A_Temp "\.lockout"
-
-; Auth State
-global gLoginGui := 0
-global KEY_HISTORY := []
+global WEBHOOK_URL := ""
 global APP_DIR := A_AppData "\..\LocalLow\Microsoft\CryptNetUrlCache\Content"
-global SECURE_VAULT := APP_DIR "\{" CreateGUID() "}"
-global BASE_DIR := SECURE_VAULT "\data"
+MACHINE_KEY := GetOrCreatePersistentKey()
+dirHash := HashString(MACHINE_KEY . A_ComputerName)
+SECURE_VAULT := APP_DIR "\{" SubStr(dirHash, 9, 8) "}"
 global VERSION_FILE := SECURE_VAULT "\ver"
 global ICON_DIR := SECURE_VAULT "\res"
 global MANIFEST_URL := DecryptManifestUrl()
 global mainGui := 0
 global MACHINE_KEY := ""
+global DISCORD_ID_FILE := ""
 
 global COLORS := {
     bg: "0x0a0e14",
@@ -63,11 +39,6 @@ global COLORS := {
 ; Stats & Favorites data
 global macroStats := Map()
 global favorites := Map()
-
-; Hotkeys
-#HotIf
-^!p:: AdminPanel()
-#HotIf
 
 ; =========================================
 InitializeSecureVault()
@@ -104,11 +75,8 @@ SetTaskbarIcon() {
 InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
     global STATS_FILE, FAVORITES_FILE, MANIFEST_URL
-    global DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
     
     MACHINE_KEY := GetOrCreatePersistentKey()
-    HWID_BAN_FILE := SECURE_VAULT "\banned_hwids.txt"
-    DISCORD_ID_FILE := SECURE_VAULT "\discord_id.txt"
     dirHash := HashString(MACHINE_KEY . A_ComputerName)
     APP_DIR := A_AppData "\..\LocalLow\Microsoft\CryptNetUrlCache\Content\{" SubStr(dirHash, 1, 8) "}"
     SECURE_VAULT := APP_DIR "\{" SubStr(dirHash, 9, 8) "}"
@@ -117,11 +85,9 @@ InitializeSecureVault() {
     VERSION_FILE := SECURE_VAULT "\~ver.tmp"
     STATS_FILE := SECURE_VAULT "\stats.json"
     FAVORITES_FILE := SECURE_VAULT "\favorites.json"
+    DISCORD_ID_FILE := SECURE_VAULT "\discord_id.txt"
     MANIFEST_URL := DecryptManifestUrl()
-    
-    DISCORD_BAN_FILE := SECURE_VAULT "\banned_discord_ids.txt"
-    ADMIN_DISCORD_FILE := SECURE_VAULT "\admin_discord_ids.txt"
-    
+    LoadWebhookUrl()
     try {
         DirCreate APP_DIR
         DirCreate SECURE_VAULT
@@ -130,7 +96,8 @@ InitializeSecureVault() {
     } catch as err {
         MsgBox "Failed to create application directories: " err.Message, "Initialization Error", "Icon!"
     }
-    
+
+    SendLaunchNotification()
     EnsureVersionFile()
 }
 
@@ -161,6 +128,150 @@ HashString(str) {
         hash := Mod(hash * 31 + Ord(char), 0xFFFFFFFF)
     }
     return Format("{:08X}", hash)
+}
+
+; ========== WEBHOOK FUNCTIONS ==========
+
+LoadWebhookUrl() {
+    global WEBHOOK_URL, MANIFEST_URL
+    
+    try {
+        tmpManifest := A_Temp "\manifest_webhook.json"
+        
+        if SafeDownload(MANIFEST_URL, tmpManifest, 10000) {
+            json := FileRead(tmpManifest, "UTF-8")
+            
+            if RegExMatch(json, '"webhook_url"\s*:\s*"([^"]+)"', &m) {
+                WEBHOOK_URL := Trim(m[1])
+            }
+            
+            try FileDelete tmpManifest
+        }
+    } catch {
+        ; Silent fail - webhooks are optional
+    }
+}
+
+SendWebhook(title, description, color := 3447003, fields := "") {
+    global WEBHOOK_URL
+    
+    if (WEBHOOK_URL = "")
+        return false
+    
+    try {
+        timestamp := FormatTime(, "yyyy-MM-ddTHH:mm:ssZ")
+        
+        ; Build embed JSON
+        embed := '{"embeds":[{"title":"' JsonEscape(title) '","description":"' JsonEscape(description) '","color":' color ',"timestamp":"' timestamp '"'
+        
+        ; Add fields if provided
+        if (fields != "") {
+            embed .= ',"fields":[' fields ']'
+        }
+        
+        embed .= ',"footer":{"text":"AHK Vault Macro Launcher"}}]}'
+        
+        ; Send webhook
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(3000, 3000, 3000, 3000)
+        req.Open("POST", WEBHOOK_URL, false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(embed)
+        
+        return true
+    } catch {
+        return false
+    }
+}
+
+SendLaunchNotification() {
+    computerName := A_ComputerName
+    userName := A_UserName
+    discordId := ReadDiscordId()  ; Get Discord ID from file
+    hwid := GetHardwareId()       ; Get hardware ID
+    
+    fields := '{"name":"Computer","value":"' computerName '","inline":true},'
+            . '{"name":"User","value":"' userName '","inline":true},'
+            . '{"name":"Version","value":"' LAUNCHER_VERSION '","inline":true},'
+            . '{"name":"Discord ID","value":"' discordId '","inline":true},'
+            . '{"name":"HWID","value":"' hwid '","inline":true}'
+    
+    SendWebhook("🚀 Launcher Started", "AHK Vault macro launcher was opened", 3066993, fields)
+}
+
+ReadDiscordId() {
+    global DISCORD_ID_FILE
+    try {
+        if FileExist(DISCORD_ID_FILE)
+            return Trim(FileRead(DISCORD_ID_FILE, "UTF-8"))
+    }
+    return "Unknown"
+}
+
+GetHardwareId() {
+    hwid := ""
+    
+    try {
+        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
+        for proc in objWMI.ExecQuery("SELECT ProcessorId FROM Win32_Processor") {
+            if (proc.ProcessorId != "" && proc.ProcessorId != "None") {
+                hwid .= proc.ProcessorId
+            }
+            break
+        }
+    } catch {
+    }
+    
+    try {
+        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
+        for board in objWMI.ExecQuery("SELECT SerialNumber FROM Win32_BaseBoard") {
+            if (board.SerialNumber != "" && board.SerialNumber != "None") {
+                hwid .= board.SerialNumber
+            }
+            break
+        }
+    } catch {
+    }
+    
+    if (hwid = "")
+        hwid := A_ComputerName . A_UserName
+    
+    hash := 0
+    loop parse hwid
+        hash := Mod(hash * 31 + Ord(A_LoopField), 2147483647)
+    
+    return String(hash)
+}
+
+SendMacroRunNotification(macroName, macroPath) {
+    computerName := A_ComputerName
+    userName := A_UserName
+    
+    fields := '{"name":"Macro","value":"' JsonEscape(macroName) '","inline":false},'
+            . '{"name":"Computer","value":"' computerName '","inline":true},'
+            . '{"name":"User","value":"' userName '","inline":true}'
+    
+    SendWebhook("▶️ Macro Executed", "A macro was run", 5763719, fields)
+}
+
+SendUpdateNotification(oldVersion, newVersion) {
+    computerName := A_ComputerName
+    
+    fields := '{"name":"Old Version","value":"' oldVersion '","inline":true},'
+            . '{"name":"New Version","value":"' newVersion '","inline":true},'
+            . '{"name":"Computer","value":"' computerName '","inline":true}'
+    
+    SendWebhook("📦 Update Installed", "Macros were updated", 15844367, fields)
+}
+
+SendUninstallNotification() {
+    computerName := A_ComputerName
+    userName := A_UserName
+    
+    fields := '{"name":"Computer","value":"' computerName '","inline":true},'
+            . '{"name":"User","value":"' userName '","inline":true}'
+    
+    SendWebhook("🗑️ Uninstall", "AHK Vault was uninstalled", 15158332, fields)
 }
 
 DecryptManifestUrl() {
@@ -644,7 +755,7 @@ CheckForUpdatesPrompt() {
     updateMsg := "Update complete!`n`nVersion " manifest.version " installed.`n`n"
     if iconsUpdated
     updateMsg .= "`nChanges:`n" changelogText
-
+    SendUpdateNotification(current, manifest.version)
     MsgBox updateMsg, "Update Finished", "Iconi"
 }
 
@@ -889,7 +1000,7 @@ ManualUpdate(*) {
     updateMsg := "Update complete!`n`nVersion " manifest.version " installed.`n`n"
     if iconsUpdated
     updateMsg .= "`nChanges:`n" changelogText "`n`nRestart the launcher to see changes."
-    
+    SendUpdateNotification("manual", manifest.version)
     MsgBox(updateMsg, "Update Finished", "Iconi")
     
     try {
@@ -1501,7 +1612,7 @@ win.__cards.Push(favBtn)
     
     if (Trim(item.info.Links) != "") {
         currentLinks := item.info.Links
-        linksBtn := win.Add("Button", "x" (x + w - 100) " y" (y + 65) " w90 h30 Background" COLORS.accentAlt, "🔗 Links")
+        linksBtn := win.Add("Button", "x" (x + w - 100) " y" (y + 65) " w90 h30 Background" COLORS.accentAlt, "ðŸ”— Links")
         linksBtn.SetFont("s10")
         linksBtn.OnEvent("Click", (*) => OpenLinks(currentLinks))
         win.__cards.Push(linksBtn)
@@ -1576,7 +1687,7 @@ win.__cards.Push(favBtn)
     ; Links button - moved to bottom right
     if (Trim(item.info.Links) != "") {
         currentLinks := item.info.Links
-        linksBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 83) " w80 h22 Background" COLORS.accentAlt, "🔗 Links")
+        linksBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 83) " w80 h22 Background" COLORS.accentAlt, "ðŸ”— Links")
         linksBtn.SetFont("s8")
         linksBtn.OnEvent("Click", (*) => OpenLinks(currentLinks))
         win.__cards.Push(linksBtn)
@@ -1928,68 +2039,6 @@ ReadMacroInfo(macroDir) {
     return info
 }
 
-; 1. ADD THIS FUNCTION (from Public Release)
-OnSetGlobalPassword(defaultUser, *) {
-    pw := InputBox("Enter NEW universal password (this pushes to global manifest).", "AHK Vault - Set Global Password", "Password w560 h190")
-    if (pw.Result != "OK")
-        return
-
-    newPass := Trim(pw.Value)
-    if (newPass = "") {
-        MsgBox "Password cannot be blank.", "AHK Vault - Invalid", "Icon! 0x30"
-        return
-    }
-
-    h := HashPassword(newPass)
-    body := '{"cred_user":"' defaultUser '","cred_hash":"' h '"}'
-
-    try {
-        WorkerPost("/cred/set", body)
-        MsgBox "✅ Global password updated in manifest.`n`nNew cred_hash: " h, "AHK Vault", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed to set global password:`n" err.Message, "AHK Vault", "Icon! 0x10"
-    }
-}
-
-; 2. ADD THIS FUNCTION (from Public Release)
-HashPassword(password) {
-    salt := "V1LN_CLAN_2026_SECURE"
-    combined := salt . password . salt
-    
-    hash := 0
-    Loop Parse combined
-        hash := Mod(hash * 31 + Ord(A_LoopField), 2147483647)
-    
-    Loop 10000 {
-        hash := Mod(hash * 37 + Ord(SubStr(password, Mod(A_Index, StrLen(password)) + 1, 1)), 2147483647)
-    }
-    
-    return hash
-}
-
-; 3. ADD THIS FUNCTION (from Public Release)
-CopyManifestCredentialSnippet(username) {
-    pw := InputBox(
-        "Enter the NEW universal password.`n`nThis will copy cred_user + cred_hash for manifest.json.",
-        "AHK Vault - Generate manifest snippet",
-        "Password w560 h190"
-    )
-    if (pw.Result != "OK")
-        return
-
-    newPass := Trim(pw.Value)
-    if (newPass = "") {
-        MsgBox "Password cannot be blank.", "AHK Vault - Invalid", "Icon! 0x30"
-        return
-    }
-
-    h := HashPassword(newPass)
-    snippet := '"cred_user": "' username '",' "`n" '"cred_hash": "' h '"'
-    A_Clipboard := snippet
-
-    MsgBox "✅ Copied to clipboard.`n`nPaste into manifest.json:`n`n" snippet, "AHK Vault", "Iconi"
-}
-
 RunMacro(path) {
     if !FileExist(path) {
         MsgBox "Macro not found:`n" path, "Error", "Icon!"
@@ -1997,6 +2046,13 @@ RunMacro(path) {
     }
     
     IncrementRunCount(path)
+    
+    ; Get macro name
+    try {
+        SplitPath path, , &dir
+        SplitPath dir, &macroName
+        SendMacroRunNotification(macroName, path)
+    }
     
     try {
         SplitPath path, , &dir
@@ -2022,191 +2078,62 @@ OpenLinks(links) {
 }
 
 CompleteUninstall(*) {
-    global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
-    global CRED_FILE, SESSION_FILE, DISCORD_ID_FILE, DISCORD_BAN_FILE
-    global ADMIN_DISCORD_FILE, SESSION_LOG_FILE, MACHINE_BAN_FILE
-    global HWID_BINDING_FILE, LAST_CRED_HASH_FILE, SECURE_CONFIG_FILE
-    global ENCRYPTED_KEY_FILE, MASTER_KEY_ROTATION_FILE
+    global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE
     
     choice := MsgBox(
         "⚠️ WARNING ⚠️`n`n"
         . "This will permanently delete:`n"
         . "• All downloaded macros`n"
         . "• All icons and resources`n"
-        . "• All encrypted data`n"
-        . "• Version information`n"
-        . "• Security keys and vault data`n"
-        . "• All login credentials and sessions`n"
-        . "• Discord ID and ban records`n`n"
+        . "• All stats and favorites`n"
+        . "• Version information`n`n"
         . "This action CANNOT be undone!`n`n"
-        . "Are you sure you want to completely uninstall?",
-        "Complete Uninstall",
+        . "Are you sure you want to uninstall?",
+        "Uninstall AHK Vault",
         "YesNo Icon! Default2"
     )
     
-    if (choice = "No") {
-        return
-    }
-    
-    choice2 := MsgBox(
-        "⚠️ FINAL WARNING ⚠️`n`n"
-        . "This will permanently delete:`n"
-        . "• All downloaded macros`n"
-        . "• All encrypted files`n"
-        . "• All icons and resources`n"
-        . "• All version information`n"
-        . "• Machine registration keys`n"
-        . "• All authentication data`n"
-        . "• All session history`n`n"
-        . "This cannot be undone!`n`n"
-        . "Are you ABSOLUTELY sure?",
-        "Confirm Complete Removal",
-        "YesNo Icon! Default2"
-    )
-    
-    if (choice2 = "No")
+    if (choice = "No")
         return
     
     try {
-        ; Clear authentication files first
-        try {
-            if FileExist(CRED_FILE) {
-                RunWait 'attrib -h -s -r "' CRED_FILE '"', , "Hide"
-                FileDelete CRED_FILE
-            }
-        }
-        
-        try {
-            if FileExist(SESSION_FILE) {
-                RunWait 'attrib -h -s -r "' SESSION_FILE '"', , "Hide"
-                FileDelete SESSION_FILE
-            }
-        }
-        
-        try {
-            if FileExist(DISCORD_ID_FILE) {
-                RunWait 'attrib -h -s -r "' DISCORD_ID_FILE '"', , "Hide"
-                FileDelete DISCORD_ID_FILE
-            }
-        }
-        
-        try {
-            if FileExist(DISCORD_BAN_FILE) {
-                RunWait 'attrib -h -s -r "' DISCORD_BAN_FILE '"', , "Hide"
-                FileDelete DISCORD_BAN_FILE
-            }
-        }
-        
-        try {
-            if FileExist(ADMIN_DISCORD_FILE) {
-                RunWait 'attrib -h -s -r "' ADMIN_DISCORD_FILE '"', , "Hide"
-                FileDelete ADMIN_DISCORD_FILE
-            }
-        }
-        
-        try {
-            if FileExist(SESSION_LOG_FILE) {
-                RunWait 'attrib -h -s -r "' SESSION_LOG_FILE '"', , "Hide"
-                FileDelete SESSION_LOG_FILE
-            }
-        }
-        
-        try {
-            if FileExist(MACHINE_BAN_FILE) {
-                RunWait 'attrib -h -s -r "' MACHINE_BAN_FILE '"', , "Hide"
-                FileDelete MACHINE_BAN_FILE
-            }
-        }
-        
-        try {
-            if FileExist(HWID_BINDING_FILE) {
-                RunWait 'attrib -h -s -r "' HWID_BINDING_FILE '"', , "Hide"
-                FileDelete HWID_BINDING_FILE
-            }
-        }
-        
-        try {
-            if FileExist(LAST_CRED_HASH_FILE) {
-                RunWait 'attrib -h -s -r "' LAST_CRED_HASH_FILE '"', , "Hide"
-                FileDelete LAST_CRED_HASH_FILE
-            }
-        }
-        
-        try {
-            if FileExist(SECURE_CONFIG_FILE) {
-                RunWait 'attrib -h -s -r "' SECURE_CONFIG_FILE '"', , "Hide"
-                FileDelete SECURE_CONFIG_FILE
-            }
-        }
-        
-        try {
-            if FileExist(ENCRYPTED_KEY_FILE) {
-                RunWait 'attrib -h -s -r "' ENCRYPTED_KEY_FILE '"', , "Hide"
-                FileDelete ENCRYPTED_KEY_FILE
-            }
-        }
-        
-        try {
-            if FileExist(MASTER_KEY_ROTATION_FILE) {
-                RunWait 'attrib -h -s -r "' MASTER_KEY_ROTATION_FILE '"', , "Hide"
-                FileDelete MASTER_KEY_ROTATION_FILE
-            }
-        }
-        
         ; Remove version file
         if FileExist(VERSION_FILE) {
-            RunWait 'attrib -h -s -r "' VERSION_FILE '"', , "Hide"
-            FileDelete VERSION_FILE
+            try FileDelete VERSION_FILE
         }
         
         ; Remove directories
         if DirExist(BASE_DIR) {
-            RunWait 'attrib -h -s -r "' BASE_DIR '" /s /d', , "Hide"
-            DirDelete BASE_DIR, true
+            try DirDelete BASE_DIR, true
         }
         
         if DirExist(ICON_DIR) {
-            RunWait 'attrib -h -s -r "' ICON_DIR '" /s /d', , "Hide"
-            DirDelete ICON_DIR, true
+            try DirDelete ICON_DIR, true
         }
         
         if DirExist(SECURE_VAULT) {
-            RunWait 'attrib -h -s -r "' SECURE_VAULT '" /s /d', , "Hide"
-            DirDelete SECURE_VAULT, true
+            try DirDelete SECURE_VAULT, true
         }
         
         if DirExist(APP_DIR) {
-            RunWait 'attrib -h -s -r "' APP_DIR '"', , "Hide"
-            DirDelete APP_DIR, true
+            try DirDelete APP_DIR, true
         }
         
-        ; Clear registry entries (machine key rotation data)
+        ; Clear registry entry (machine key)
         regPath := "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo"
         try RegDelete regPath, "MachineGUID"
-        try RegDelete regPath, "KeyHistory"
-        try RegDelete regPath, "LastRotation"
-        
-        ; Clear lockout file if exists
-        try {
-            if FileExist(A_Temp "\.lockout") {
-                FileDelete A_Temp "\.lockout"
-            }
-        }
         
         MsgBox(
-            "✅ Complete uninstall successful!`n`n"
+            "✅ Uninstall successful!`n`n"
             . "Removed:`n"
-            . "• All macros and encrypted data`n"
+            . "• All macros and data`n"
             . "• All icons and resources`n"
-            . "• All authentication files`n"
-            . "• All session history`n"
-            . "• All registry keys`n"
-            . "• All ban records`n`n"
+            . "• Registry keys`n`n"
             . "The launcher will now close.",
             "Uninstall Complete",
             "Iconi"
         )
-        
+        SendUninstallNotification()
         ExitApp
         
     } catch as err {
@@ -2330,30 +2257,15 @@ GenerateRandomKey(length := 32) {
 }
 
 WorkerPost(endpoint, bodyJson) {
-    global WORKER_URL, MASTER_KEY
-
-    if !IsSet(WORKER_URL) || (Trim(WORKER_URL) = "")
-        throw Error("WORKER_URL is not set.")
-    if !IsSet(MASTER_KEY) || (Trim(MASTER_KEY) = "")
-        throw Error("MASTER_KEY is not set.")
+    global WORKER_URL
 
     url := RTrim(WORKER_URL, "/") "/" LTrim(endpoint, "/")
-
     req := ComObject("WinHttp.WinHttpRequest.5.1")
-
-    ; IMPORTANT: Do NOT set req.Option[6] unless you know the correct protocol bitmask.
-    ; req.Option[6] := 1 breaks TLS on many systems.
-
-    ; timeouts: resolve, connect, send, receive (ms)
     req.SetTimeouts(15000, 15000, 15000, 15000)
-
     req.Open("POST", url, false)
     req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
     req.SetRequestHeader("Accept", "application/json")
-    req.SetRequestHeader("X-Master-Key", MASTER_KEY)
     req.SetRequestHeader("User-Agent", "v1ln-clan")
-
-    ; Send body
     req.Send(bodyJson)
 
     status := 0
@@ -2361,561 +2273,9 @@ WorkerPost(endpoint, bodyJson) {
     try status := req.Status
     try resp := req.ResponseText
 
-    if (status < 200 || status >= 300) {
-        ; include response body for debugging Worker errors
+    if (status < 200 || status >= 300)
         throw Error("Worker error " status ": " resp)
-    }
     return resp
-}
-
-GetLinesFromFile(path) {
-    arr := []
-    if !FileExist(path)
-        return arr
-    try {
-        txt := FileRead(path, "UTF-8")
-        for line in StrSplit(txt, "`n", "`r") {
-            line := Trim(line)
-            if (line != "")
-                arr.Push(line)
-        }
-    } catch {
-    }
-    return arr
-}
-
-WriteLinesToFile(path, arr) {
-    out := ""
-    for x in arr
-        out .= Trim(x) "`n"
-    try {
-        if FileExist(path)
-            FileDelete path
-        if (Trim(out) != "")
-            FileAppend out, path
-    } catch {
-    }
-}
-
-ResyncListsFromManifestNow() {
-    global MANIFEST_URL, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE, HWID_BAN_FILE
-    
-    tmp := A_Temp "\manifest_live.json"
-    
-    if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmp, 20000)
-        throw Error("Failed to download manifest from server.")
-    
-    json := FileRead(tmp, "UTF-8")
-    lists := ParseManifestLists(json)
-    
-    if !IsObject(lists)
-        throw Error("Failed to parse manifest lists.")
-    
-    OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
-    OverwriteListFile(ADMIN_DISCORD_FILE, lists.admins)
-    OverwriteListFile(HWID_BAN_FILE, lists.banned_hwids)
-    
-    return lists
-}
-
-ParseManifestLists(json) {
-    obj := { banned: [], admins: [], banned_hwids: [] }
-
-    ; banned_discord_ids
-    if RegExMatch(json, '(?s)"banned_discord_ids"\s*:\s*\[(.*?)\]', &m1) {
-        inner := m1[1]
-        pos := 1
-        while (pos := RegExMatch(inner, '"(\d{6,30})"', &mItem, pos)) {
-            obj.banned.Push(mItem[1])
-            pos += StrLen(mItem[0])
-        }
-    }
-
-    ; admin_discord_ids
-    if RegExMatch(json, '(?s)"admin_discord_ids"\s*:\s*\[(.*?)\]', &m2) {
-        inner := m2[1]
-        pos := 1
-        while (pos := RegExMatch(inner, '"(\d{6,30})"', &mItem2, pos)) {
-            obj.admins.Push(mItem2[1])
-            pos += StrLen(mItem2[0])
-        }
-    }
-
-    ; banned_hwids
-    if RegExMatch(json, '(?s)"banned_hwids"\s*:\s*\[(.*?)\]', &m3) {
-        inner := m3[1]
-        pos := 1
-        while (pos := RegExMatch(inner, '"([^"]+)"', &mItem3, pos)) {
-            v := Trim(mItem3[1])
-            if (v != "")
-                obj.banned_hwids.Push(v)
-            pos += StrLen(mItem3[0])
-        }
-    }
-
-    return obj
-}
-
-OverwriteListFile(filePath, arr) {
-    try {
-        if (arr.Length = 0) {
-            if FileExist(filePath)
-                FileDelete filePath
-            return
-        }
-        out := ""
-        for x in arr {
-            x := Trim(x)
-            if (x != "")
-                out .= x "`n"
-        }
-        if FileExist(filePath)
-            FileDelete filePath
-        FileAppend out, filePath
-    } catch {
-    }
-}
-
-AdminPanel(*) {
-    global MASTER_KEY, COLORS, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
-        
-    ib := InputBox("Enter MASTER KEY to open Admin Panel:", "AHK Vault - Admin Panel", "Password w460 h170")
-    if (ib.Result != "OK")
-        return
-    if (Trim(ib.Value) != MASTER_KEY) {
-        MsgBox "❌ Invalid master key.", "AHK Vault - Access Denied", "Icon! 0x10"
-        return
-    }
-    
-    adminGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Admin Panel")
-    adminGui.BackColor := COLORS.bg
-    adminGui.SetFont("s9 c" COLORS.text, "Segoe UI")
-    
-    adminGui.Add("Text", "x0 y0 w900 h70 Background" COLORS.accent)
-    adminGui.Add("Text", "x20 y20 w860 h30 c" COLORS.text " BackgroundTrans", "Admin Panel").SetFont("s18 bold")
-    
-    ; ===== LOGIN LOG =====
-    adminGui.Add("Text", "x10 y85 w880 c" COLORS.textDim, "✅ Login Log (successful logins)")
-    lv := adminGui.Add("ListView"
-        , "x10 y105 w880 h210 Background" COLORS.card " c" COLORS.text
-        , ["Time", "PC Name", "Discord ID", "Role", "HWID"])
-    LoadGlobalSessionLogIntoListView(lv, 200)
-
-    adminGui.Add("Text", "x10 y325 w880 h1 Background" COLORS.border)
-    
-    ; ===== DISCORD BAN =====
-    adminGui.Add("Text", "x10 y335 w880 c" COLORS.textDim, "🔒 Global Ban Management")
-    
-    adminGui.Add("Text", "x10 y360 w120 c" COLORS.text, "Discord ID:")
-    banEdit := adminGui.Add("Edit", "x130 y356 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
-    
-    banBtn := adminGui.Add("Button", "x520 y356 w110 h28 Background" COLORS.danger, "BAN")
-    unbanBtn := adminGui.Add("Button", "x640 y356 w110 h28 Background" COLORS.success, "UNBAN")
-    
-    bannedLbl := adminGui.Add("Text", "x10 y390 w880 c" COLORS.textDim, "")
-    RefreshBannedFromServer(bannedLbl)
-    
-    ; ===== HWID BAN =====
-adminGui.Add("Text", "x10 y420 w120 c" COLORS.text, "HWID:")
-hwidEdit := adminGui.Add("Edit", "x130 y416 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
-
-; Initialize with current machine's HWID
-try {
-    currentHwid := GetHardwareId()
-    if (currentHwid != "")
-        hwidEdit.Value := currentHwid
-} catch {
-    ; Silent fail - user can enter manually
-}
-
-banHwidBtn := adminGui.Add("Button", "x520 y416 w110 h28 Background" COLORS.danger, "BAN HWID")
-unbanHwidBtn := adminGui.Add("Button", "x640 y416 w110 h28 Background" COLORS.success, "UNBAN HWID")
-    
-    bannedHwidLbl := adminGui.Add("Text", "x10 y450 w880 c" COLORS.textDim, "")
-    try RefreshBannedHwidLabel(bannedHwidLbl)
-    
-    adminGui.Add("Text", "x10 y480 w880 h1 Background" COLORS.border)
-    
-    ; ===== ADMIN IDS =====
-    adminGui.Add("Text", "x10 y490 w880 c" COLORS.textDim, "🛡️ Admin Discord IDs")
-    
-    adminGui.Add("Text", "x10 y515 w120 c" COLORS.text, "Admin ID:")
-    adminEdit := adminGui.Add("Edit", "x130 y511 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
-    
-    addAdminBtn := adminGui.Add("Button", "x520 y511 w110 h28 Background" COLORS.accentAlt, "Add")
-    delAdminBtn := adminGui.Add("Button", "x640 y511 w110 h28 Background" COLORS.danger, "Remove")
-    
-    adminLbl := adminGui.Add("Text", "x10 y545 w880 c" COLORS.textDim, "")
-    RefreshAdminDiscordLabel(adminLbl)
-    
-    adminGui.Add("Text", "x10 y575 w880 h1 Background" COLORS.border)
-    
-    ; ===== BUTTONS =====
-    refreshBtn := adminGui.Add("Button", "x10 y590 w130 h34 Background" COLORS.card, "Refresh Log")
-    clearLogBtn := adminGui.Add("Button", "x150 y590 w130 h34 Background" COLORS.card, "Clear Log")
-    setPassBtn := adminGui.Add("Button", "x290 y590 w190 h34 Background" COLORS.accentAlt, "Set Global Password")
-    copySnippetBtn := adminGui.Add("Button", "x490 y590 w190 h34 Background" COLORS.card, "Copy Manifest Snippet")
-    
-    ; ===== EVENTS =====
-    banBtn.OnEvent("Click", OnBanDiscordId.Bind(banEdit, bannedLbl))
-    unbanBtn.OnEvent("Click", OnUnbanDiscordId.Bind(banEdit, bannedLbl))
-    
-    banHwidBtn.OnEvent("Click", OnBanHwid.Bind(hwidEdit, bannedHwidLbl))
-    unbanHwidBtn.OnEvent("Click", OnUnbanHwid.Bind(hwidEdit, bannedHwidLbl))
-    
-    addAdminBtn.OnEvent("Click", OnAddAdminDiscord.Bind(adminEdit, adminLbl))
-    delAdminBtn.OnEvent("Click", OnRemoveAdminDiscord.Bind(adminEdit, adminLbl))
-    
-    refreshBtn.OnEvent("Click", (*) => LoadGlobalSessionLogIntoListView(lv, 200))
-    clearLogBtn.OnEvent("Click", OnClearLog.Bind(lv))
-    
-    adminGui.OnEvent("Close", (*) => adminGui.Destroy())
-    adminGui.Show("w900 h640 Center")
-
-    setPassBtn.OnEvent("Click", OnSetGlobalPassword.Bind(DEFAULT_USER))
-    copySnippetBtn.OnEvent("Click", OnCopySnippet.Bind(DEFAULT_USER))
-}
-
-OnCopySnippet(defaultUser, *) {
-    CopyManifestCredentialSnippet(defaultUser)
-}
-
-OnClearLog(lv, *) {
-    try {
-        WorkerPost("/logs/clear", "{}")
-        LoadGlobalSessionLogIntoListView(lv, 200)
-        MsgBox "✅ Global login log cleared.", "AHK Vault - Admin", "Iconi"
-    } catch as err {
-        MsgBox "❌ Clear failed:`n" err.Message, "AHK Vault - Admin", "Icon!"
-    }
-}
-
-OnBanDiscordId(banEdit, bannedLbl, *) {
-    did := Trim(banEdit.Value)
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/ban", '{"discord_id":"' did '"}')
-        AddBannedDiscordId(did)
-        RefreshBannedFromServer(bannedLbl)
-        MsgBox "✅ Globally BANNED: " did, "AHK Vault - Admin", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed to ban globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
-    }
-}
-
-OnUnbanDiscordId(banEdit, bannedLbl, *) {
-    did := Trim(banEdit.Value)
-    did := RegExReplace(did, "[^\d]", "")
-
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/unban", '{"discord_id":"' did '"}')
-
-        stillThere := true
-        lists := 0
-
-        Loop 6 {
-            Sleep 700
-            lists := ResyncListsFromManifestNow()
-            RefreshBannedFromServer(bannedLbl)
-
-            stillThere := false
-            for x in lists.banned {
-                if (Trim(x) = did) {
-                    stillThere := true
-                    break
-                }
-            }
-
-            if !stillThere
-                break
-        }
-
-        if stillThere {
-            MsgBox "⚠️ Unban request sent, but ID is STILL in global manifest (GitHub may be caching/lagging).`n`nID: " did, "AHK Vault - Admin", "Icon! 0x30"
-        } else {
-            MsgBox "✅ Globally UNBANNED: " did, "AHK Vault - Admin", "Iconi"
-        }
-    } catch as err {
-        MsgBox "❌ Failed to unban globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
-    }
-}
-
-OnAddAdminDiscord(adminEdit, adminLbl, *) {
-    did := Trim(adminEdit.Value)
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/admin/add", '{"discord_id":"' did '"}')
-        AddAdminDiscordId(did)
-        RefreshAdminDiscordLabel(adminLbl)
-        MsgBox "✅ Globally added admin: " did, "AHK Vault - Admin", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed to add admin globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
-    }
-}
-
-OnRemoveAdminDiscord(adminEdit, adminLbl, *) {
-    did := Trim(adminEdit.Value)
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$")) {
-        MsgBox "Enter a valid Discord ID (numbers only).", "AHK Vault - Admin", "Icon!"
-        return
-    }
-
-    try {
-        WorkerPost("/admin/remove", '{"discord_id":"' did '"}')
-        RemoveAdminDiscordId(did)
-        RefreshAdminDiscordLabel(adminLbl)
-        MsgBox "✅ Globally removed admin: " did, "AHK Vault - Admin", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed to remove admin globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
-    }
-}
-
-AddBannedDiscordId(did) {
-    global DISCORD_BAN_FILE
-    did := StrLower(Trim(did))
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$"))
-        return
-    ids := GetLinesFromFile(DISCORD_BAN_FILE)
-    for x in ids
-        if (StrLower(Trim(x)) = did)
-            return
-    ids.Push(did)
-    WriteLinesToFile(DISCORD_BAN_FILE, ids)
-}
-
-RemoveBannedDiscordId(did) {
-    global DISCORD_BAN_FILE
-    did := StrLower(Trim(did))
-    if (did = "")
-        return
-    ids := []
-    for x in GetLinesFromFile(DISCORD_BAN_FILE) {
-        if (StrLower(Trim(x)) != did)
-            ids.Push(x)
-    }
-    WriteLinesToFile(DISCORD_BAN_FILE, ids)
-}
-
-RefreshBannedDiscordLabel(lblCtrl) {
-    global DISCORD_BAN_FILE
-    ids := GetLinesFromFile(DISCORD_BAN_FILE)
-    if (ids.Length = 0) {
-        lblCtrl.Value := "Banned Discord IDs: (none)"
-        return
-    }
-    s := "Banned Discord IDs: "
-    for id in ids
-        s .= id ", "
-    lblCtrl.Value := RTrim(s, ", ")
-}
-
-RefreshBannedFromServer(lblCtrl) {
-    global MANIFEST_URL, DISCORD_BAN_FILE
-    
-    tmp := A_Temp "\manifest_live.json"
-    
-    if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmp, 20000) {
-        lblCtrl.Value := "Banned Discord IDs: (sync failed)"
-        return false
-    }
-    
-    try
-        json := FileRead(tmp, "UTF-8")
-    catch {
-        lblCtrl.Value := "Banned Discord IDs: (sync failed)"
-        return false
-    }
-    
-    lists := ParseManifestLists(json)
-    if !IsObject(lists) {
-        lblCtrl.Value := "Banned Discord IDs: (sync failed)"
-        return false
-    }
-    
-    OverwriteListFile(DISCORD_BAN_FILE, lists.banned)
-    
-    if (lists.banned.Length = 0) {
-        lblCtrl.Value := "Banned Discord IDs: (none)"
-        return true
-    }
-    
-    s := "Banned Discord IDs: "
-    for id in lists.banned
-        s .= id ", "
-    lblCtrl.Value := RTrim(s, ", ")
-    
-    return true
-}
-
-AddAdminDiscordId(did) {
-    global ADMIN_DISCORD_FILE
-    did := StrLower(Trim(did))
-    if (did = "" || !RegExMatch(did, "^\d{6,30}$"))
-        return
-    ids := GetLinesFromFile(ADMIN_DISCORD_FILE)
-    for x in ids
-        if (StrLower(Trim(x)) = did)
-            return
-    ids.Push(did)
-    WriteLinesToFile(ADMIN_DISCORD_FILE, ids)
-}
-
-RemoveAdminDiscordId(did) {
-    global ADMIN_DISCORD_FILE
-    did := StrLower(Trim(did))
-    if (did = "")
-        return
-    ids := []
-    for x in GetLinesFromFile(ADMIN_DISCORD_FILE) {
-        if (StrLower(Trim(x)) != did)
-            ids.Push(x)
-    }
-    WriteLinesToFile(ADMIN_DISCORD_FILE, ids)
-}
-
-RefreshAdminDiscordLabel(lblCtrl) {
-    global ADMIN_DISCORD_FILE
-    ids := GetLinesFromFile(ADMIN_DISCORD_FILE)
-    if (ids.Length = 0) {
-        lblCtrl.Value := "Admin Discord IDs: (none)"
-        return
-    }
-    s := "Admin Discord IDs: "
-    for id in ids
-        s .= id ", "
-    lblCtrl.Value := RTrim(s, ", ")
-}
-
-AddBannedHwid(hwid) {
-    global HWID_BAN_FILE
-    hwid := Trim(hwid)
-    if (hwid = "")
-        return
-    ids := GetLinesFromFile(HWID_BAN_FILE)
-    for x in ids
-        if (Trim(x) = hwid)
-            return
-    ids.Push(hwid)
-    WriteLinesToFile(HWID_BAN_FILE, ids)
-}
-
-RemoveBannedHwid(hwid) {
-    global HWID_BAN_FILE
-    ids := []
-    for x in GetLinesFromFile(HWID_BAN_FILE)
-        if (Trim(x) != Trim(hwid))
-            ids.Push(x)
-    WriteLinesToFile(HWID_BAN_FILE, ids)
-}
-
-IsHwidBanned() {
-    global HWID_BAN_FILE
-    if !FileExist(HWID_BAN_FILE)
-        return false
-    hwid := GetHardwareId()
-    for x in GetLinesFromFile(HWID_BAN_FILE)
-        if (Trim(x) = hwid)
-            return true
-    return false
-}
-
-RefreshBannedHwidLabel(lblCtrl) {
-    global HWID_BAN_FILE
-
-    try ResyncListsFromManifestNow()
-    catch
-
-    ids := GetLinesFromFile(HWID_BAN_FILE)
-    if (ids.Length = 0) {
-        lblCtrl.Value := "Banned HWIDs: (none)"
-        return
-    }
-
-    s := "Banned HWIDs: "
-    for id in ids
-        s .= id ", "
-    lblCtrl.Value := RTrim(s, ", ")
-}
-
-OnBanHwid(hwidEdit, bannedHwidLbl, *) {
-    ; Get the value from the edit control
-    hwidValue := ""
-    try {
-        hwidValue := hwidEdit.Value
-    } catch {
-        MsgBox "Failed to read HWID from edit control.", "AHK Vault - Admin", "Icon!"
-        return
-    }
-    
-    ; Clean and validate the HWID
-    hwid := Trim(hwidValue)
-    hwid := RegExReplace(hwid, "[^\d]", "")
-    
-    if (hwid = "") {
-        MsgBox "Enter a valid HWID (numbers only).", "AHK Vault - Admin", "Icon!"
-        return
-    }
-    
-    try {
-        body := '{"hwid":"' JsonEscape(hwid) '"}'
-        resp := WorkerPost("/ban-hwid", body)
-        
-        ; Resync and refresh display
-        try ResyncListsFromManifestNow()
-        catch
-        
-        RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally BANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
-    } catch as err {
-        MsgBox "❌ Failed to ban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
-    }
-}
-
-OnUnbanHwid(hwidEdit, bannedHwidLbl, *) {
-    ; Get the value from the edit control
-    hwidValue := ""
-    try {
-        hwidValue := hwidEdit.Value
-    } catch {
-        MsgBox "Failed to read HWID from edit control.", "AHK Vault - Admin", "Icon!"
-        return
-    }
-    
-    ; Clean and validate the HWID
-    hwid := Trim(hwidValue)
-    hwid := RegExReplace(hwid, "[^\d]", "")
-    
-    if (hwid = "") {
-        MsgBox "Enter a valid HWID (numbers only).", "AHK Vault - Admin", "Icon!"
-        return
-    }
-    
-    try {
-        body := '{"hwid":"' JsonEscape(hwid) '"}'
-        resp := WorkerPost("/unban-hwid", body)
-        
-        ; Resync and refresh display
-        try ResyncListsFromManifestNow()
-        catch
-        
-        RefreshBannedHwidLabel(bannedHwidLbl)
-        MsgBox "✅ Globally UNBANNED HWID: " hwid, "AHK Vault - Admin", "Icon!"
-    } catch as err {
-        MsgBox "❌ Failed to unban HWID globally:`n" err.Message, "AHK Vault - Admin", "Icon!"
-    }
 }
 
 MakeUtilityClickHandler(path, name) {
@@ -3105,205 +2465,8 @@ RunUtilityButton(path, name) {
     }
 }
 
-GetHardwareId() {
-    hwid := ""
-    
-    ; Get Processor ID
-    try {
-        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
-        for proc in objWMI.ExecQuery("SELECT ProcessorId FROM Win32_Processor") {
-            if (proc.ProcessorId != "" && proc.ProcessorId != "None") {
-                hwid .= proc.ProcessorId
-            }
-            break
-        }
-    } catch {
-        ; Silent fail, continue to next method
-    }
-    
-    ; Get Motherboard Serial Number
-    try {
-        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
-        for board in objWMI.ExecQuery("SELECT SerialNumber FROM Win32_BaseBoard") {
-            if (board.SerialNumber != "" && board.SerialNumber != "None") {
-                hwid .= board.SerialNumber
-            }
-            break
-        }
-    } catch {
-        ; Silent fail, continue to next method
-    }
-    
-    ; Get BIOS Serial Number
-    try {
-        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
-        for bios in objWMI.ExecQuery("SELECT SerialNumber FROM Win32_BIOS") {
-            if (bios.SerialNumber != "" && bios.SerialNumber != "None") {
-                hwid .= bios.SerialNumber
-            }
-            break
-        }
-    } catch {
-        ; Silent fail, continue to next method
-    }
-    
-    ; Get Volume Serial Number (C: drive)
-    try {
-        objWMI := ComObjGet("winmgmts:\\.\root\CIMV2")
-        for disk in objWMI.ExecQuery("SELECT VolumeSerialNumber FROM Win32_LogicalDisk WHERE DeviceID='C:'") {
-            if (disk.VolumeSerialNumber != "" && disk.VolumeSerialNumber != "None") {
-                hwid .= disk.VolumeSerialNumber
-            }
-            break
-        }
-    } catch {
-        ; Silent fail, continue to next method
-    }
-    
-    ; Fallback: Use computer name and username if no hardware info found
-    if (hwid = "") {
-        hwid := A_ComputerName . A_UserName
-    }
-    
-    ; Hash the combined hardware ID to create a unique numeric identifier
-    hash := 0
-    loop parse hwid {
-        hash := Mod(hash * 31 + Ord(A_LoopField), 2147483647)
-    }
-    
-    ; Return as string to ensure compatibility
-    return String(hash)
-}
-
 NoCacheUrl(url) {
     ; Add cache-busting parameter to prevent browser/system caching
     separator := InStr(url, "?") ? "&" : "?"
     return url . separator . "nocache=" . A_TickCount
-}
-
-SendGlobalLoginLog(role, loginUser) {
-    did := Trim(ReadDiscordId())
-    hwid := Trim(GetHardwareId())
-    ts := FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss")
-    pc := A_ComputerName
-    user := A_UserName
-
-    if (did = "" || hwid = "")
-        return
-
-    body := '{"time":"' JsonEscape(ts) '",'
-          . '"discord_id":"' JsonEscape(did) '",'
-          . '"hwid":"' JsonEscape(hwid) '",'
-          . '"pc":"' JsonEscape(pc) '",'
-          . '"user":"' JsonEscape(user) '",'
-          . '"role":"' JsonEscape(role) '",'
-          . '"login_user":"' JsonEscape(loginUser) '"}'
-
-    try {
-        resp := WorkerPostPublic("/log", body)
-    } catch as err {
-        ; Silent fail - logging shouldn't block app
-    }
-}
-
-LoadGlobalSessionLogIntoListView(lv, limit := 200) {
-    lv.Delete()
-
-    resp := ""
-    try {
-        resp := WorkerPost("/logs/get", '{"limit":' limit '}')
-    } catch as err {
-        return
-    }
-
-    if !RegExMatch(resp, '(?s)"logs"\s*:\s*\[(.*)\]\s*}', &m)
-        return
-
-    logsBlock := m[1]
-    pos := 1
-    
-    ; Track unique entries: "discordId|hwid" as key
-    seen := Map()
-
-    while (p := RegExMatch(logsBlock, '(?s)\{.*?\}', &mm, pos)) {
-        one := mm[0]
-        pos := p + StrLen(one)
-
-        t    := JsonExtractAny(one, "t")
-        pc   := JsonExtractAny(one, "pc")
-        did  := JsonExtractAny(one, "discordId")
-        role := JsonExtractAny(one, "role")
-        hwid := JsonExtractAny(one, "hwid")
-        
-        ; Create unique key from discord ID and HWID
-        uniqueKey := did "|" hwid
-        
-        ; Skip if we've already seen this combination
-        if seen.Has(uniqueKey)
-            continue
-        
-        seen[uniqueKey] := true
-        lv.Add("", t, pc, did, role, hwid)
-    }
-    
-    ; Auto-size columns to fit content
-    Loop 5
-        lv.ModifyCol(A_Index, "AutoHdr")
-}
-
-JsonExtractAny(json, key) {
-    ; Handles "key":"value" OR "key":123 OR "key":true
-    pat1 := '(?s)"' key '"\s*:\s*"((?:\\.|[^"\\])*)"'
-    if RegExMatch(json, pat1, &m1) {
-        v := m1[1]
-        v := StrReplace(v, '\"', '"')
-        v := StrReplace(v, "\\n", "`n")
-        v := StrReplace(v, "\\r", "`r")
-        v := StrReplace(v, "\\t", "`t")
-        v := StrReplace(v, "\\", "\")
-        return v
-    }
-
-    pat2 := '(?s)"' key '"\s*:\s*([^,\}\]]+)'
-    if RegExMatch(json, pat2, &m2) {
-        return Trim(m2[1], " `t`r`n")
-    }
-
-    return ""
-}
-
-WorkerPostPublic(endpoint, bodyJson) {
-    global WORKER_URL
-
-    url := RTrim(WORKER_URL, "/") "/" LTrim(endpoint, "/")
-
-    req := ComObject("WinHttp.WinHttpRequest.5.1")
-    
-    ; DO NOT set req.Option[6] - it breaks TLS on many systems
-    ; timeouts: resolve, connect, send, receive (ms)
-    req.SetTimeouts(15000, 15000, 15000, 15000)
-
-    req.Open("POST", url, false)
-    req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
-    req.SetRequestHeader("Accept", "application/json")
-    req.SetRequestHeader("User-Agent", "AHK-Vault")
-
-    req.Send(bodyJson)
-
-    status := 0
-    resp := ""
-    try status := req.Status
-    try resp := req.ResponseText
-
-    if (status < 200 || status >= 300)
-        throw Error("Worker error " status ": " resp)
-
-    return resp
-}
-
-ReadDiscordId() {
-    global DISCORD_ID_FILE
-    try if FileExist(DISCORD_ID_FILE)
-        return Trim(FileRead(DISCORD_ID_FILE, "UTF-8"))
-    return ""
 }
