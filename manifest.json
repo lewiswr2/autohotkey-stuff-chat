@@ -3,11 +3,13 @@
   "launcher_version": "1.0.0",
   "zip_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Macros.zip",
   "launcher_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/MacroLauncher.ahk",
-   "master_key": "A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7 ",
+  "master_key": "A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7 ",
   "cred_user": "AHKvaultmacros@discord",
   "cred_hash": "1849087399",
   "password_hash": "1849087399",
-  "banned_discord_ids": [],
+  "banned_discord_ids": [
+    "886398974456655892"
+  ],
   "admin_discord_ids": [
     "1247055057489231914",
     "886398974456655892"
