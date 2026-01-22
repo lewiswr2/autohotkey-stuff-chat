@@ -1,4 +1,4 @@
-﻿#Requires AutoHotkey v2.0
+#Requires AutoHotkey v2.0
 #SingleInstance Force
 #NoTrayIcon
 
@@ -66,7 +66,7 @@ SetTaskbarIcon() {
         if FileExist(iconPath)
             TraySetIcon(iconPath)
         else
-            TraySetIcon("shell32.dll", 3)  ; This is showing - file not found
+            TraySetIcon("shell32.dll", 3)
     } catch {
     }
 }
@@ -187,8 +187,8 @@ SendWebhook(title, description, color := 3447003, fields := "") {
 SendLaunchNotification() {
     computerName := A_ComputerName
     userName := A_UserName
-    discordId := ReadDiscordId()  ; Get Discord ID from file
-    hwid := GetHardwareId()       ; Get hardware ID
+    discordId := ReadDiscordId()
+    hwid := GetHardwareId()
     
     fields := '{"name":"Computer","value":"' computerName '","inline":true},'
             . '{"name":"User","value":"' userName '","inline":true},'
@@ -1154,23 +1154,23 @@ CreateMainGui() {
     btnLog.OnEvent("Click", ShowChangelog)
 
     mainGui.Add("Text", "x25 y100 w500 c" COLORS.text, "Utilities").SetFont("s12 bold")
-mainGui.Add("Text", "x25 y125 w500 h1 Background" COLORS.border)
+    mainGui.Add("Text", "x25 y125 w500 h1 Background" COLORS.border)
 
-yPos := 145
+    yPos := 145
 
-utilButtons := GetUtilityButtons()
+    utilButtons := GetUtilityButtons()
 
-if (utilButtons.Length > 0) {
-    rowsNeeded := Ceil(utilButtons.Length / 4)
-    CreateUtilityButtonsGrid(mainGui, utilButtons, 25, yPos)
-    yPos += (rowsNeeded * 100) + 20
-} else {
-    noUtilText := mainGui.Add("Text", 
-        "x25 y" yPos " w500 h60 c" COLORS.textDim " Center", 
-        "No utility buttons found`n`nCreate subfolders in: " BASE_DIR "\Buttons\`nEach with Main.ahk and icon.png")
-    noUtilText.SetFont("s9")
-    yPos += 80
-}
+    if (utilButtons.Length > 0) {
+        rowsNeeded := Ceil(utilButtons.Length / 4)
+        CreateUtilityButtonsGrid(mainGui, utilButtons, 25, yPos)
+        yPos += (rowsNeeded * 100) + 20
+    } else {
+        noUtilText := mainGui.Add("Text", 
+            "x25 y" yPos " w500 h60 c" COLORS.textDim " Center", 
+            "No utility buttons found`n`nCreate subfolders in: " BASE_DIR "\Buttons\`nEach with Main.ahk and icon.png")
+        noUtilText.SetFont("s9")
+        yPos += 80
+    }
     
     ; Games Section
     mainGui.Add("Text", "x25 y" yPos " w500 c" COLORS.text, "Games").SetFont("s12 bold")
@@ -1322,10 +1322,10 @@ SafeOpenURL(url) {
 
 ; ========== CATEGORY VIEW ==========
 
-OpenCategory(category) {
+OpenCategory(category, sortBy := "favorites", page := 1) {
     global COLORS, BASE_DIR
     
-    macros := GetMacrosWithInfo(category)
+    macros := GetMacrosWithInfo(category, sortBy)
     
     if (macros.Length = 0) {
         MsgBox(
@@ -1345,77 +1345,7 @@ OpenCategory(category) {
     
     win.__data := macros
     win.__cards := []
-    win.__currentPage := 1
-    win.__itemsPerPage := 8
-    win.__sortBy := "favorites"
-    win.__category := category
-    
-    gameIcon := GetGameIcon(category)
-    if (gameIcon && FileExist(gameIcon)) {
-        try {
-            win.Show("Hide")
-            win.Opt("+Icon" gameIcon)
-        }
-    }
-    
-    win.Add("Text", "x0 y0 w750 h90 Background" COLORS.accent)
-    
-    backBtn := win.Add("Button", "x20 y25 w70 h35 Background" COLORS.accentHover, "← Back")
-    backBtn.SetFont("s10")
-    backBtn.OnEvent("Click", (*) => win.Destroy())
-    
-    title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", category)
-    title.SetFont("s22 bold")
-    
-    sortLabel := win.Add("Text", "x530 y25 w60 c" COLORS.text " BackgroundTrans", "Sort by:")
-    sortLabel.SetFont("s9")
-    
-    sortDDL := win.Add("DropDownList", "x530 y45 w200 Background" COLORS.card " c" COLORS.text, 
-        ["⭐ Favorites First", "🔤 Name (A-Z)", "🔤 Name (Z-A)", "📊 Most Used", "📊 Least Used", "📅 Recently Added"])
-    sortDDL.SetFont("s9")
-    sortDDL.Choose(1)
-    sortDDL.OnEvent("Change", (*) => ChangeSortAndRefresh(win, sortDDL.Text, category))
-    
-    win.__scrollY := 110
-    
-    RenderCards(win)
-    win.Show("w750 h640 Center")
-}
-
-ChangeSortAndRefresh(win, sortText, category) {
-    sortMap := Map(
-        "⭐ Favorites First", "favorites",
-        "🔤 Name (A-Z)", "name_asc",
-        "🔤 Name (Z-A)", "name_desc",
-        "📊 Most Used", "runs_desc",
-        "📊 Least Used", "runs_asc",
-        "📅 Recently Added", "recent"
-    )
-    
-    sortBy := sortMap.Has(sortText) ? sortMap[sortText] : "favorites"
-    
-    win.Destroy()
-    Sleep 100
-    OpenCategoryWithSort(category, sortBy)
-}
-
-OpenCategoryWithSort(category, sortBy := "favorites") {
-    global COLORS, BASE_DIR
-    
-    macros := GetMacrosWithInfo(category, sortBy)
-    
-    if (macros.Length = 0) {
-        MsgBox("No macros found in '" category "'", "No Macros", "Iconi")
-        return
-    }
-    
-    win := Gui("-Resize +Border", category " - Macros")
-    win.BackColor := COLORS.bg
-    win.SetFont("s10", "Segoe UI")
-    
-    win.__data := macros
-    win.__cards := []
-    win.__currentPage := 1
+    win.__currentPage := page
     win.__itemsPerPage := 8
     win.__sortBy := sortBy
     win.__category := category
@@ -1459,6 +1389,42 @@ OpenCategoryWithSort(category, sortBy := "favorites") {
     
     RenderCards(win)
     win.Show("w750 h640 Center")
+}
+
+ChangeSortAndRefresh(win, sortText, category) {
+    sortMap := Map(
+        "⭐ Favorites First", "favorites",
+        "🔤 Name (A-Z)", "name_asc",
+        "🔤 Name (Z-A)", "name_desc",
+        "📊 Most Used", "runs_desc",
+        "📊 Least Used", "runs_asc",
+        "📅 Recently Added", "recent"
+    )
+    
+    sortBy := sortMap.Has(sortText) ? sortMap[sortText] : "favorites"
+    
+    win.Destroy()
+    Sleep 100
+    OpenCategory(category, sortBy, 1)  ; Reset to page 1 when sorting
+}
+
+ChangePage(win, direction) {
+    category := win.__category
+    sortBy := win.__sortBy
+    newPage := win.__currentPage + direction
+    
+    totalPages := Ceil(win.__data.Length / win.__itemsPerPage)
+    
+    ; Validate page number
+    if (newPage < 1)
+        newPage := 1
+    if (newPage > totalPages)
+        newPage := totalPages
+    
+    ; Close current window and reopen with new page
+    win.Destroy()
+    Sleep 100
+    OpenCategory(category, sortBy, newPage)
 }
 
 RenderCards(win) {
@@ -1592,18 +1558,18 @@ CreateFullWidthCard(win, item, x, y, w, h) {
         win.__cards.Push(runCountCtrl)
     }
     
-currentPath := item.path
-isFav := IsFavorite(currentPath)
-favBtn := win.Add(
-    "Button",
-    "x" (x + w - 145)
-    " y" (y + 20)  ; Adjust Y position slightly
-    " w35 h35 Center Background" (isFav ? COLORS.favorite : COLORS.cardHover),
-    isFav ? "★" : "✰"
-)
-favBtn.SetFont("s18", "Segoe UI Symbol")  ; Slightly larger font
-favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
-win.__cards.Push(favBtn)
+    currentPath := item.path
+    isFav := IsFavorite(currentPath)
+    favBtn := win.Add(
+        "Button",
+        "x" (x + w - 145)
+        " y" (y + 20)
+        " w35 h35 Center Background" (isFav ? COLORS.favorite : COLORS.cardHover),
+        isFav ? "★" : "✰"
+    )
+    favBtn.SetFont("s18", "Segoe UI Symbol")
+    favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
+    win.__cards.Push(favBtn)
     
     runBtn := win.Add("Button", "x" (x + w - 100) " y" (y + 20) " w90 h35 Background" COLORS.success, "▶ Run")
     runBtn.SetFont("s11 bold")
@@ -1612,7 +1578,7 @@ win.__cards.Push(favBtn)
     
     if (Trim(item.info.Links) != "") {
         currentLinks := item.info.Links
-        linksBtn := win.Add("Button", "x" (x + w - 100) " y" (y + 65) " w90 h30 Background" COLORS.accentAlt, "ðŸ”— Links")
+        linksBtn := win.Add("Button", "x" (x + w - 100) " y" (y + 65) " w90 h30 Background" COLORS.accentAlt, "🔗 Links")
         linksBtn.SetFont("s10")
         linksBtn.OnEvent("Click", (*) => OpenLinks(currentLinks))
         win.__cards.Push(linksBtn)
@@ -1666,28 +1632,25 @@ CreateGridCard(win, item, x, y, w, h) {
     
     currentPath := item.path
     isFav := IsFavorite(currentPath)
-favBtn := win.Add(
-    "Button",
-    "x" (x + w - 110)
-    " y" (y + 20)  ; Adjust Y position slightly
-    " w20 h20 Center Background" (isFav ? COLORS.favorite : COLORS.cardHover),
-    isFav ? "★" : "✰"
-)
-favBtn.SetFont("s11", "Segoe UI Symbol")  ; Slightly larger font
-favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
-win.__cards.Push(favBtn)
-
+    favBtn := win.Add(
+        "Button",
+        "x" (x + w - 110)
+        " y" (y + 20)
+        " w20 h20 Center Background" (isFav ? COLORS.favorite : COLORS.cardHover),
+        isFav ? "★" : "✰"
+    )
+    favBtn.SetFont("s11", "Segoe UI Symbol")
+    favBtn.OnEvent("Click", (*) => ToggleFavoriteAndRefresh(win, currentPath))
+    win.__cards.Push(favBtn)
     
-    ; Run button - top right
     runBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 15) " w80 h30 Background" COLORS.success, "▶ Run")
     runBtn.SetFont("s10 bold")
     runBtn.OnEvent("Click", (*) => RunMacro(currentPath))
     win.__cards.Push(runBtn)
     
-    ; Links button - moved to bottom right
     if (Trim(item.info.Links) != "") {
         currentLinks := item.info.Links
-        linksBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 83) " w80 h22 Background" COLORS.accentAlt, "ðŸ”— Links")
+        linksBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 83) " w80 h22 Background" COLORS.accentAlt, "🔗 Links")
         linksBtn.SetFont("s8")
         linksBtn.OnEvent("Click", (*) => OpenLinks(currentLinks))
         win.__cards.Push(linksBtn)
@@ -1697,29 +1660,15 @@ win.__cards.Push(favBtn)
 ToggleFavoriteAndRefresh(win, macroPath) {
     ToggleFavorite(macroPath)
     
-    winTitle := win.Title
+    ; Get current state
+    category := win.__category
+    sortBy := win.__sortBy
+    currentPage := win.__currentPage
     
-    if RegExMatch(winTitle, "^(.+) - Macros$", &m) {
-        category := m[1]
-        win.Destroy()
-        Sleep 100
-        OpenCategory(category)
-    } else {
-        RenderCards(win)
-    }
-}
-
-ChangePage(win, direction) {
-    win.__currentPage := win.__currentPage + direction
-    
-    totalPages := Ceil(win.__data.Length / win.__itemsPerPage)
-    
-    if (win.__currentPage < 1)
-        win.__currentPage := 1
-    if (win.__currentPage > totalPages)
-        win.__currentPage := totalPages
-    
-    RenderCards(win)
+    ; Close and reopen with same settings
+    win.Destroy()
+    Sleep 100
+    OpenCategory(category, sortBy, currentPage)
 }
 
 GetMacroIcon(macroPath) {
@@ -1847,7 +1796,6 @@ SortByName(macros, ascending := true) {
         Loop sorted.Length - i {
             j := A_Index + i
             
-            ; Safely get titles with error handling
             titleI := ""
             titleJ := ""
             
@@ -1864,7 +1812,6 @@ SortByName(macros, ascending := true) {
             if (titleI = "" || titleJ = "")
                 continue
             
-            ; Use StrCompare for string comparison
             comparison := StrCompare(StrLower(titleI), StrLower(titleJ))
             
             if ascending {
@@ -1957,7 +1904,6 @@ SortByRecent(macros) {
 
 JsonLoad(jsonText) {
     static doc := ComObject("htmlfile")
-    ; Ensure a window exists
     doc.write("<meta http-equiv='X-UA-Compatible' content='IE=9'>")
     return doc.parentWindow.JSON.parse(jsonText)
 }
@@ -2047,7 +1993,6 @@ RunMacro(path) {
     
     IncrementRunCount(path)
     
-    ; Get macro name
     try {
         SplitPath path, , &dir
         SplitPath dir, &macroName
@@ -2097,12 +2042,10 @@ CompleteUninstall(*) {
         return
     
     try {
-        ; Remove version file
         if FileExist(VERSION_FILE) {
             try FileDelete VERSION_FILE
         }
         
-        ; Remove directories
         if DirExist(BASE_DIR) {
             try DirDelete BASE_DIR, true
         }
@@ -2119,7 +2062,6 @@ CompleteUninstall(*) {
             try DirDelete APP_DIR, true
         }
         
-        ; Clear registry entry (machine key)
         regPath := "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo"
         try RegDelete regPath, "MachineGUID"
         
@@ -2279,7 +2221,6 @@ WorkerPost(endpoint, bodyJson) {
 }
 
 MakeUtilityClickHandler(path, name) {
-    ; This creates a new closure that captures the current path and name
     return (*) => RunUtilityButton(path, name)
 }
 
@@ -2299,7 +2240,6 @@ GetUtilityButtons() {
             mainFile := folderPath "\Main.ahk"
             
             if FileExist(mainFile) {
-                ; Check for icon with multiple extensions
                 iconFile := ""
                 for ext in ["png", "ico", "jpg", "jpeg"] {
                     testPath := folderPath "\icon." ext
@@ -2336,17 +2276,14 @@ CreateUtilityButtonsGrid(gui, buttons, x, y) {
     col := 0
     
     for index, btn in buttons {
-        ; Store values in local variables that will be properly captured
         btnPath := btn.path
         btnName := btn.name
         btnIcon := btn.icon
         
-        ; Background card
         card := gui.Add("Text", 
             "x" xPos " y" yPos " w" buttonWidth " h" buttonHeight 
             " Background" COLORS.card " Border")
         
-        ; Icon or badge centered
         iconY := yPos + 12
         iconX := xPos + (buttonWidth - 48) // 2
         
@@ -2373,7 +2310,6 @@ CreateUtilityButtonsGrid(gui, buttons, x, y) {
             badge.SetFont("s20 bold c" COLORS.text)
         }
         
-        ; Name label below icon
         displayName := FormatUtilityName(btnName)
         labelY := yPos + 65
         
@@ -2384,23 +2320,18 @@ CreateUtilityButtonsGrid(gui, buttons, x, y) {
             displayName)
         label.SetFont("s8 bold")
         
-        ; Create click handler with proper closure
-        ; This captures btnPath and btnName at THIS iteration
         clickBtn := gui.Add("Button", 
             "x" xPos " y" yPos 
             " w" buttonWidth " h" buttonHeight, 
             "")
         clickBtn.Opt("Background" COLORS.card)
-        clickBtn.Opt("+0x4000000")  ; BS_FLAT style
+        clickBtn.Opt("+0x4000000")
         
-        ; Use a function that creates a new closure for each button
         clickBtn.OnEvent("Click", MakeUtilityClickHandler(btnPath, btnName))
         
-        ; Move to next column
         col++
         xPos += buttonWidth + spacing
         
-        ; Wrap to next row after 4 buttons
         if (col >= 4) {
             col := 0
             xPos := x
@@ -2425,17 +2356,11 @@ CreateUtilityBadge(gui, name, x, y, size := 40) {
 }
 
 FormatUtilityName(name) {
-    ; Convert filename to nice display name
-    ; Example: "RestoreFont" -> "Restore Font"
-    
-    ; Add spaces before capital letters
     result := RegExReplace(name, "([a-z])([A-Z])", "$1 $2")
     
-    ; Handle common abbreviations
     result := StrReplace(result, "Ahk", "AHK")
     result := StrReplace(result, "Gui", "GUI")
     
-    ; Limit length for button display
     if (StrLen(result) > 15)
         result := SubStr(result, 1, 12) "..."
     
@@ -2451,22 +2376,18 @@ RunUtilityButton(path, name) {
     try {
         SplitPath path, , &dir
         
-        ; Show tooltip with the actual name
         ToolTip "▶ Running: " name
         
-        ; Run the utility
         Run '"' A_AhkPath '" "' path '"', dir
         
-        ; Clear tooltip after 1.5 seconds
         SetTimer () => ToolTip(), -1500
     } catch as err {
-        ToolTip  ; Clear tooltip on error
+        ToolTip
         MsgBox "Failed to run utility: " err.Message "`n`nPath: " path "`n`nWorking Dir: " dir, "Error", "Icon!"
     }
 }
 
 NoCacheUrl(url) {
-    ; Add cache-busting parameter to prevent browser/system caching
     separator := InStr(url, "?") ? "&" : "?"
     return url . separator . "nocache=" . A_TickCount
 }

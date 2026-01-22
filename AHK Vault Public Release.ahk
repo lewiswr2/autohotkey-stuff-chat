@@ -1304,7 +1304,6 @@ CreateLoginGui() {
 AttemptLogin(username, password, statusControl) {
     global SESSION_TOKEN_FILE, MAX_ATTEMPTS, LOCKOUT_FILE
 
-    SendBanNotification(ReadDiscordId(), GetHardwareId(), "viewing_ban_screen")
     if (Trim(username) = "" || Trim(password) = "") {
         statusControl.Value := "Please enter both username and password"
         SoundBeep(700, 120)
