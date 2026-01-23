@@ -1118,7 +1118,7 @@ CreateMainGui() {
     mainGui.SetFont("s10", "Segoe UI")
     
     ; Set window icon
-    iconPath := ICON_DIR "\Launcher.png"
+    iconPath := ICON_DIR "\TrayIcon.png"
     if FileExist(iconPath) {
         try {
             mainGui.Show("Hide")

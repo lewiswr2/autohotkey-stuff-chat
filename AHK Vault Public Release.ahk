@@ -697,7 +697,7 @@ DecryptManifestUrl() {
 
 SetTaskbarIcon() {
     global ICON_DIR
-    iconPath := ICON_DIR "\Launcher.png"
+    iconPath := ICON_DIR "\TrayIcon.png"
     
     try {
         if FileExist(iconPath)
