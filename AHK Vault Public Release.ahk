@@ -288,8 +288,8 @@ CheckLoginAppUpdate() {
     global LAUNCHER_VERSION, MANIFEST_URL
     
     try {
-        ; Download manifest
-        tmpManifest := A_Temp "\manifest_update_check.json"
+        ; Download manifest with cache-busting
+        tmpManifest := A_Temp "\manifest_update_check_" A_TickCount ".json"
         
         if !SafeDownload(NoCacheUrl(MANIFEST_URL), tmpManifest, 15000) {
             return  ; Silently fail - don't block app launch
@@ -300,6 +300,7 @@ CheckLoginAppUpdate() {
         try {
             json := FileRead(tmpManifest, "UTF-8")
         } catch {
+            try FileDelete tmpManifest
             return
         }
         
@@ -315,6 +316,9 @@ CheckLoginAppUpdate() {
             loginUrl := Trim(u[1])
         }
         
+        ; Cleanup manifest
+        try FileDelete tmpManifest
+        
         ; Check if update needed
         if (manifestVersion = "" || loginUrl = "") {
             return  ; Missing data, skip update
@@ -326,7 +330,7 @@ CheckLoginAppUpdate() {
         
         ; ===== UPDATE AVAILABLE =====
         choice := MsgBox(
-            "🔄 Login App Update Available!`n`n"
+            "📄 Login App Update Available!`n`n"
             . "Current: v" LAUNCHER_VERSION "`n"
             . "Latest: v" manifestVersion "`n`n"
             . "Update now? (Recommended)",
@@ -338,12 +342,12 @@ CheckLoginAppUpdate() {
             return
         }
         
-        ; Download new version
-        tmpUpdate := A_Temp "\AHK_Vault_Update.ahk"
+        ; Download new version with cache-busting
+        tmpUpdate := A_Temp "\AHK_Vault_Login_Update_" A_TickCount ".ahk"
         
-        ToolTip "Downloading update..."
+        ToolTip "Downloading update v" manifestVersion "..."
         
-        if !SafeDownload(loginUrl, tmpUpdate, 30000) {
+        if !SafeDownload(NoCacheUrl(loginUrl), tmpUpdate, 30000) {
             ToolTip
             MsgBox "Update download failed. Continuing with current version.", "Update Failed", "Icon!"
             return
@@ -366,6 +370,14 @@ CheckLoginAppUpdate() {
             if (!InStr(content, "LAUNCHER_VERSION")) {
                 throw Error("Not the login app")
             }
+            
+            ; Verify the downloaded version matches manifest
+            if RegExMatch(content, 'LAUNCHER_VERSION\s*:=\s*"([^"]+)"', &dlv) {
+                if (Trim(dlv[1]) != manifestVersion) {
+                    throw Error("Version mismatch - downloaded v" dlv[1] " but expected v" manifestVersion)
+                }
+            }
+            
         } catch as err {
             MsgBox "Update validation failed: " err.Message "`n`nContinuing with current version.", "Update Failed", "Icon!"
             try FileDelete tmpUpdate
@@ -373,82 +385,96 @@ CheckLoginAppUpdate() {
         }
         
         ; ===== APPLY UPDATE =====
-        try {
-            currentScript := A_ScriptFullPath
-            backupScript := A_ScriptDir "\AHK_Vault_Login_BACKUP.ahk"
-            
-            ; Create backup of current version
-            if FileExist(currentScript) {
-                FileCopy currentScript, backupScript, 1
-            }
-            
-            ; Create batch file to replace script and restart
-            batFile := A_Temp "\update_login.bat"
-            batContent := 
-            (
-            '@echo off
-            echo Updating AHK Vault Login...
-            timeout /t 2 /nobreak >nul
-            copy /y "' tmpUpdate '" "' currentScript '"
-            timeout /t 1 /nobreak >nul
-            start "" "' A_AhkPath '" "' currentScript '"
-            del "' tmpUpdate '"
-            del "%~f0"
-            '
-            )
-            
-            if FileExist(batFile)
-                FileDelete batFile
-            FileAppend batContent, batFile
-            
-            ; Show update message
-            MsgBox (
-                "✅ Update downloaded successfully!`n`n"
-                . "The app will restart now to apply the update.`n`n"
-                . "New version: v" manifestVersion
-            ), "Update Ready", "Iconi T3000"
-            
-            ; Run update batch and exit
-            Run batFile, , "Hide"
-            Sleep 500
-            ExitApp
-            
-        } catch as err {
-            MsgBox "Failed to apply update: " err.Message "`n`nContinuing with current version.", "Update Failed", "Icon!"
-            
-            ; Cleanup
-            try FileDelete tmpUpdate
-            try FileDelete batFile
-        }
+        ApplyLoginUpdate(tmpUpdate, manifestVersion)
         
     } catch as err {
         ; Silent fail - don't interrupt app launch
     }
 }
 
+ApplyLoginUpdate(updateFile, newVersion) {
+    global LAUNCHER_VERSION
+    
+    try {
+        currentScript := A_ScriptFullPath
+        backupScript := A_ScriptDir "\AHK_Vault_Login_BACKUP_v" LAUNCHER_VERSION ".ahk"
+        
+        ; Create backup of current version
+        if FileExist(currentScript) {
+            try FileCopy currentScript, backupScript, 1
+        }
+        
+        ; Create batch file to replace script and restart
+        batFile := A_Temp "\update_login_" A_TickCount ".bat"
+        batContent := '@echo off'
+                   . '`necho Updating AHK Vault Login...'
+                   . '`ntimeout /t 2 /nobreak >nul'
+                   . '`n:RETRY'
+                   . '`ncopy /y "' updateFile '" "' currentScript '"'
+                   . '`nif errorlevel 1 ('
+                   . '`n    timeout /t 1 /nobreak >nul'
+                   . '`n    goto RETRY'
+                   . '`n)'
+                   . '`ntimeout /t 1 /nobreak >nul'
+                   . '`nstart "" "' A_AhkPath '" "' currentScript '"'
+                   . '`ntimeout /t 2 /nobreak >nul'
+                   . '`ndel "' updateFile '"'
+                   . '`ndel "%~f0"'
+        
+        if FileExist(batFile)
+            FileDelete batFile
+        FileAppend batContent, batFile
+        
+        ; Show update message
+        MsgBox (
+            "✅ Update downloaded successfully!`n`n"
+            . "The app will restart now to apply the update.`n`n"
+            . "Current: v" LAUNCHER_VERSION "`n"
+            . "New: v" newVersion "`n`n"
+            . "A backup has been saved to:`n"
+            . backupScript
+        ), "Update Ready", "Iconi T3000"
+        
+        ; Run update batch and exit
+        Run batFile, , "Hide"
+        ExitApp
+        
+    } catch as err {
+        MsgBox "Failed to apply update: " err.Message "`n`nContinuing with current version.", "Update Failed", "Icon!"
+        
+        ; Cleanup
+        try FileDelete updateFile
+        try FileDelete batFile
+    }
+}
+
 VersionCompare(a, b) {
+    ; Remove any non-numeric/non-period characters
     a := RegExReplace(a, "[^0-9.]", "")
     b := RegExReplace(b, "[^0-9.]", "")
     
+    ; Split into parts
     pa := StrSplit(a, ".")
     pb := StrSplit(b, ".")
     
+    ; Compare each part
     Loop Max(pa.Length, pb.Length) {
         va := pa.Has(A_Index) ? Integer(pa[A_Index]) : 0
         vb := pb.Has(A_Index) ? Integer(pb[A_Index]) : 0
         
         if (va > vb)
-            return 1
+            return 1  ; a is newer
         if (va < vb)
-            return -1
+            return -1  ; b is newer
     }
     
-    return 0
+    return 0  ; versions are equal
 }
 
 NoCacheUrl(url) {
     separator := InStr(url, "?") ? "&" : "?"
-    return url . separator . "nocache=" . A_TickCount
+    ; Use timestamp + random to prevent caching
+    return url . separator . "nocache=" . A_TickCount . "&rand=" . Random(1000, 9999)
 }
 
 EnsureVersionFile() {
@@ -1165,19 +1191,31 @@ SafeDownload(url, out, timeoutMs := 10000) {
         return false
     
     try {
+        ; Delete existing file if present
         if FileExist(out)
             FileDelete out
         
-        Download url, out
+        ; Download with retry logic
+        retries := 3
+        Loop retries {
+            try {
+                Download url, out
+                break
+            } catch {
+                if (A_Index = retries)
+                    throw
+            }
+        }
         
+        ; Wait for file to exist with timeout
         startTime := A_TickCount
         while !FileExist(out) {
             if (A_TickCount - startTime > timeoutMs) {
                 return false
             }
-            Sleep 100
         }
         
+        ; Verify file size
         fileSize := 0
         Loop Files, out
             fileSize := A_LoopFileSize
@@ -1288,7 +1326,6 @@ AttemptLogin(username, password, statusControl) {
             statusControl.Value := "Account is banned"
             SoundBeep(500, 200)
             SendBanNotification(discordId, hwid, "login_attempt_while_banned")
-            Sleep 1500
             ShowBanMessage()
             return
         }
@@ -1310,7 +1347,6 @@ AttemptLogin(username, password, statusControl) {
                 
                 statusControl.Value := "✅ Login successful!"
                 SoundBeep(1000, 100)
-                Sleep 500
                 
                 attemptCount := 0
                 
@@ -1337,7 +1373,6 @@ AttemptLogin(username, password, statusControl) {
             
             statusControl.Value := "Too many failed attempts - locked for 30 minutes"
             SoundBeep(500, 300)
-            Sleep 2000
             ExitApp
         }
         
@@ -1399,9 +1434,6 @@ LaunchMainApp() {
     ; Step 3: Launch MacroLauncher
     try {
         Run '"' A_AhkPath '" "' MACRO_LAUNCHER_PATH '"'
-        
-        ; Give launcher time to start
-        Sleep 1000
         
         ; Exit login app
         ExitApp
