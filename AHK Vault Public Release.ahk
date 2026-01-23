@@ -128,13 +128,6 @@ InitializeSecureVault() {
     if !FileExist(MACRO_LAUNCHER_PATH) {
         ExtractMacroLauncher()
         LoadWebhookUrl()
-        ; ADD THIS DEBUG CODE:
-if (WEBHOOK_URL = "") {
-    MsgBox "⚠️ WEBHOOK_URL is EMPTY!`n`nWebhook notifications will not work.", "Debug", "Icon! T5000"
-} else {
-    MsgBox "✅ Webhook loaded:`n`n" WEBHOOK_URL, "Debug", "Iconi T5000"
-}
-; END DEBUG CODE
     }
 }
 
@@ -162,13 +155,6 @@ LoadWebhookUrl() {
 SendWebhook(title, description, color := 3447003, fields := "") {
     global WEBHOOK_URL
     
-    ; ADD THIS DEBUG
-    if (WEBHOOK_URL = "") {
-        MsgBox "Cannot send webhook - WEBHOOK_URL is empty!", "Debug", "Icon!"
-        return false
-    }
-    ; END DEBUG
-    
     try {
         timestamp := FormatTime(, "yyyy-MM-ddTHH:mm:ssZ")
         
@@ -185,16 +171,9 @@ SendWebhook(title, description, color := 3447003, fields := "") {
         req.Open("POST", WEBHOOK_URL, false)
         req.SetRequestHeader("Content-Type", "application/json")
         req.Send(embed)
-        
-        ; ADD THIS DEBUG
-        MsgBox "✅ Webhook sent!`nStatus: " req.Status, "Debug", "Iconi T2000"
-        ; END DEBUG
-        
+
         return true
     } catch as err {
-        ; ADD THIS DEBUG
-        MsgBox "❌ Webhook error:`n`n" err.Message, "Debug", "Icon!"
-        ; END DEBUG
         return false
     }
 }
@@ -1303,9 +1282,7 @@ AttemptLogin(username, password, statusControl) {
         body := '{"discord_id":"' JsonEscape(discordId) '","hwid":"' hwid '","username":"' JsonEscape(username) '","password_hash":"' passwordHash '","pc":"' JsonEscape(A_ComputerName) '"}'
         
         resp := WorkerPostPublic("/auth/login", body)
-        
-        MsgBox "Server Response:`n`n" resp, "Debug", "Iconi"
-        
+                
         ; Check if banned
         if RegExMatch(resp, '"error"\s*:\s*"banned"') {
             statusControl.Value := "Account is banned"
