@@ -54,7 +54,7 @@ global COLORS := {
 InitializeSecureVault()
 SetTaskbarIcon()
 CheckLoginAppUpdate()
-
+LoadWebhookUrl()
 did := ReadDiscordId()
 CheckLockout()
 EnsureDiscordId()
@@ -897,19 +897,6 @@ ReadDiscordId() {
 }
 
 ValidateNotBanned() {
-    if !CheckServerBanStatus()
-        return false
-
-    if IsDiscordBanned()
-        return false
-
-    if IsHwidBanned()
-        return false
-
-    return true
-}
-
-CheckServerBanStatus() {
     global WORKER_URL
     
     hwid := GetHardwareId()
@@ -923,15 +910,48 @@ CheckServerBanStatus() {
     try {
         resp := WorkerPostPublic("/check-ban", body)
         
-        if RegExMatch(resp, '"banned"\s*:\s*true')
-            return false
+if RegExMatch(resp, '"is_admin"\s*:\s*true')
+    return true
+
+if RegExMatch(resp, '"banned"\s*:\s*true')
+    return false
         
+        ; Server says not banned - validate HWID binding
         if !ValidateHwidBinding(hwid, discordId)
             return false
         
         return true
     } catch {
-        return !IsDiscordBanned() && !IsMachineBanned()
+        ; If server check fails, allow login (fail-open)
+        return true
+    }
+}
+
+IsDiscordBanned() {
+    global DISCORD_BAN_FILE
+    
+    if !FileExist(DISCORD_BAN_FILE)
+        return false
+    
+    try {
+        data := Trim(FileRead(DISCORD_BAN_FILE, "UTF-8"))
+        if (data = "")
+            return false
+        
+        currentDiscordId := ReadDiscordId()
+        if (currentDiscordId = "")
+            return false
+        
+        ; Check if current Discord ID is in the ban file
+        bannedIds := StrSplit(data, "`n")
+        for bannedId in bannedIds {
+            if (Trim(bannedId) = currentDiscordId)
+                return true
+        }
+        
+        return false
+    } catch {
+        return false
     }
 }
 
@@ -1045,45 +1065,6 @@ SaveMachineBan(discordId := "", reason := "banned") {
         Run 'attrib +h +s "' MACHINE_BAN_FILE '"', , "Hide"
     } catch {
     }
-}
-
-IsDiscordBanned() {
-    global DISCORD_BAN_FILE
-    if !FileExist(DISCORD_BAN_FILE)
-        return false
-    
-    did := ReadDiscordId()
-    if (did = "")
-        return false
-    
-    txt := ""
-    try {
-        txt := FileRead(DISCORD_BAN_FILE, "UTF-8")
-    } catch {
-        return false
-    }
-    
-    for line in StrSplit(txt, "`n") {
-        if (Trim(line) = did)
-            return true
-    }
-    return false
-}
-
-IsHwidBanned() {
-    global HWID_BAN_FILE
-    if !FileExist(HWID_BAN_FILE)
-        return false
-    hwid := GetHardwareId()
-    
-    try {
-        txt := FileRead(HWID_BAN_FILE, "UTF-8")
-        for line in StrSplit(txt, "`n") {
-            if (Trim(line) = hwid)
-                return true
-        }
-    }
-    return false
 }
 
 CheckSession() {
@@ -1319,9 +1300,11 @@ AttemptLogin(username, password, statusControl) {
         hwid := GetHardwareId()
         passwordHash := HashPassword(password)
         
-        body := '{"discord_id":"' JsonEscape(discordId) '","hwid":"' hwid '","username":"' JsonEscape(username) '","password_hash":"' passwordHash '"}'
+        body := '{"discord_id":"' JsonEscape(discordId) '","hwid":"' hwid '","username":"' JsonEscape(username) '","password_hash":"' passwordHash '","pc":"' JsonEscape(A_ComputerName) '"}'
         
         resp := WorkerPostPublic("/auth/login", body)
+        
+        MsgBox "Server Response:`n`n" resp, "Debug", "Iconi"
         
         ; Check if banned
         if RegExMatch(resp, '"error"\s*:\s*"banned"') {
