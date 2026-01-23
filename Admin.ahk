@@ -7,6 +7,7 @@
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global WEBHOOK_URL := "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_"
 global MASTER_KEY := "A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7"
+global CURRENT_VERSION := "1.0.0"
 
 global COLORS := {
     bg: "0x0a0e14",
@@ -33,11 +34,139 @@ LoadConfig()
 ; Initialize secure vault path
 InitializeSecureVault()
 
+; Check for updates before showing GUI
+CheckForUpdates()
+
 ; Send notification that admin tool was opened
 SendAdminOpenNotification()
 
 ; Create the GUI
 CreateAdminGui()
+
+; ========== AUTO-UPDATE SYSTEM ==========
+CheckForUpdates() {
+    global WORKER_URL, CURRENT_VERSION
+    
+    try {
+        ; Fetch manifest
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("GET", WORKER_URL "/manifest", false)
+        req.Send()
+        
+        if (req.Status != 200)
+            return
+        
+        resp := req.ResponseText
+        
+        ; Extract admin_version
+        latestVersion := JsonExtractAny(resp, "admin_version")
+        if (latestVersion = "")
+            return
+        
+        ; Compare versions
+        if (CompareVersions(latestVersion, CURRENT_VERSION) > 0) {
+            ; Extract admin_update_url
+            updateUrl := JsonExtractAny(resp, "admin_update_url")
+            if (updateUrl = "")
+                return
+            
+            ; Show update prompt
+            choice := MsgBox(
+                "🔄 Admin Tool Update Available`n`n"
+                . "Current Version: " CURRENT_VERSION "`n"
+                . "Latest Version: " latestVersion "`n`n"
+                . "Would you like to update now?",
+                "AHK Vault - Update Available",
+                "YesNo Iconi"
+            )
+            
+            if (choice = "Yes") {
+                DownloadAndInstallUpdate(updateUrl)
+            }
+        }
+    } catch {
+        ; Silent fail - don't interrupt startup
+    }
+}
+
+CompareVersions(v1, v2) {
+    ; Returns: 1 if v1 > v2, -1 if v1 < v2, 0 if equal
+    parts1 := StrSplit(v1, ".")
+    parts2 := StrSplit(v2, ".")
+    
+    maxLen := Max(parts1.Length, parts2.Length)
+    
+    Loop maxLen {
+        p1 := (A_Index <= parts1.Length) ? Integer(parts1[A_Index]) : 0
+        p2 := (A_Index <= parts2.Length) ? Integer(parts2[A_Index]) : 0
+        
+        if (p1 > p2)
+            return 1
+        if (p1 < p2)
+            return -1
+    }
+    
+    return 0
+}
+
+DownloadAndInstallUpdate(updateUrl) {
+    global WEBHOOK_URL
+    
+    try {
+        ; Create temp directory
+        tempDir := A_Temp "\AHKVaultUpdate"
+        if !DirExist(tempDir)
+            DirCreate(tempDir)
+        
+        tempFile := tempDir "\Admin_new.ahk"
+        
+        ; Download new version
+        Download(updateUrl, tempFile)
+        
+        if !FileExist(tempFile)
+            throw Error("Download failed")
+        
+        ; Send webhook notification
+        try {
+            details := '{"name":"Action","value":"Admin Tool Updated","inline":true},'
+                     . '{"name":"Machine","value":"' A_UserName '@' A_ComputerName '","inline":true},'
+                     . '{"name":"Version","value":"' CURRENT_VERSION ' → [New Version]","inline":true}'
+            SendAdminActionWebhook("Auto-Update Completed", details, 3066993)
+        }
+        
+        ; Create batch file to replace current script
+        batchFile := tempDir "\update.bat"
+        batchContent := '@echo off`n'
+                      . 'timeout /t 2 /nobreak > nul`n'
+                      . 'copy /Y "' tempFile '" "' A_ScriptFullPath '"`n'
+                      . 'start "" "' A_ScriptFullPath '"`n'
+                      . 'del "%~f0"'
+        
+        FileDelete(batchFile)
+        FileAppend(batchContent, batchFile)
+        
+        ; Show success message
+        MsgBox(
+            "✅ Update downloaded successfully!`n`n"
+            . "The admin tool will now restart to apply the update.",
+            "AHK Vault - Update",
+            "Iconi T3"
+        )
+        
+        ; Run batch file and exit
+        Run(batchFile, , "Hide")
+        ExitApp()
+        
+    } catch as err {
+        MsgBox(
+            "❌ Update failed:`n" err.Message "`n`n"
+            . "Please download manually from:`n" updateUrl,
+            "AHK Vault - Update Error",
+            "Icon!"
+        )
+    }
+}
 
 ; ========== INITIALIZATION ==========
 InitializeSecureVault() {
@@ -157,7 +286,7 @@ SendAdminActionWebhook(action, details, color := 15844367) {
 }
 
 SendAdminOpenNotification() {
-    global WEBHOOK_URL
+    global WEBHOOK_URL, CURRENT_VERSION
     
     if (WEBHOOK_URL = "")
         return
@@ -175,6 +304,7 @@ SendAdminOpenNotification() {
                . '"color":15158332,'
                . '"fields":['
                . '{"name":"User","value":"' userName '@' computerName '","inline":true},'
+               . '{"name":"Version","value":"' CURRENT_VERSION '","inline":true},'
                . '{"name":"IP Address","value":"' ipAddress '","inline":true},'
                . '{"name":"Timestamp","value":"' timestamp '","inline":false}'
                . '],'
@@ -206,16 +336,16 @@ GetPublicIP() {
 
 ; ========== CREATE ADMIN GUI ==========
 CreateAdminGui() {
-    global COLORS
+    global COLORS, CURRENT_VERSION
     
-    myGui := Gui("+Resize", "AHK Vault - Admin Tool")
+    myGui := Gui("+Resize", "AHK Vault - Admin Tool v" CURRENT_VERSION)
     myGui.BackColor := COLORS.bg
     myGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
     ; Header
     myGui.Add("Text", "x0 y0 w900 h70 Background" COLORS.accent)
     myGui.Add("Text", "x20 y20 w860 h30 c" COLORS.text " BackgroundTrans", "🛡️ Admin Panel").SetFont("s18 bold")
-    myGui.Add("Text", "x20 y50 w860 c" COLORS.text " BackgroundTrans", "Centralized Control Panel").SetFont("s9")
+    myGui.Add("Text", "x20 y50 w860 c" COLORS.text " BackgroundTrans", "Centralized Control Panel v" CURRENT_VERSION).SetFont("s9")
     
     ; ===== LOGIN LOG =====
     myGui.Add("Text", "x10 y85 w880 c" COLORS.textDim, "✅ Login Log (successful logins) - Right-click for options")
@@ -300,32 +430,31 @@ CreateAdminGui() {
     
     myGui.Add("Text", "x10 y640 w880 h1 Background" COLORS.border)
     
+    ; ===== SYSTEM MAINTENANCE =====
+    myGui.Add("Text", "x10 y650 w880 c" COLORS.textDim, "⚙️ System Maintenance")
+    
+    myGui.Add("Text", "x10 y675 w120 c" COLORS.text, "Discord ID:")
+    resetHwidEdit := myGui.Add("Edit", "x130 y671 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
+    
+    resetHwidBtn := myGui.Add("Button", "x520 y671 w110 h28 Background" COLORS.warning, "Reset HWID")
+    resetHwidBtn.SetFont("s9 bold")
+    
+    myGui.Add("Text", "x10 y705 w880 h1 Background" COLORS.border)
+    
     ; ===== BUTTONS =====
-    refreshBtn := myGui.Add("Button", "x10 y655 w130 h34 Background" COLORS.card, "🔄 Refresh Log")
+    refreshBtn := myGui.Add("Button", "x10 y720 w130 h34 Background" COLORS.card, "🔄 Refresh Log")
     refreshBtn.SetFont("s10")
-    clearLogBtn := myGui.Add("Button", "x150 y655 w130 h34 Background" COLORS.card, "🗑️ Clear Log")
+    clearLogBtn := myGui.Add("Button", "x150 y720 w130 h34 Background" COLORS.card, "🗑️ Clear Log")
     clearLogBtn.SetFont("s10")
-    setPassBtn := myGui.Add("Button", "x290 y655 w190 h34 Background" COLORS.accentAlt, "🔐 Set Global Password")
+    setPassBtn := myGui.Add("Button", "x290 y720 w150 h34 Background" COLORS.accentAlt, "🔐 Set Password")
     setPassBtn.SetFont("s10")
-    copySnippetBtn := myGui.Add("Button", "x490 y655 w190 h34 Background" COLORS.card, "📋 Copy Manifest Snippet")
+    copySnippetBtn := myGui.Add("Button", "x450 y720 w160 h34 Background" COLORS.card, "📋 Copy Snippet")
     copySnippetBtn.SetFont("s10")
-    exitBtn := myGui.Add("Button", "x690 y655 w200 h34 Background" COLORS.danger, "❌ Exit Admin Tool")
+    checkUpdateBtn := myGui.Add("Button", "x620 y720 w130 h34 Background" COLORS.warning, "🔄 Check Update")
+    checkUpdateBtn.SetFont("s10")
+    exitBtn := myGui.Add("Button", "x760 y720 w130 h34 Background" COLORS.danger, "❌ Exit")
     exitBtn.SetFont("s10 bold")
     
-    resetHwidBtn := myGui.Add("Button", "x755 y25 w90 h35 Background" COLORS.warning, "Reset HWID")
-    resetHwidBtn.SetFont("s9")
-    resetHwidBtn.OnEvent("Click", (*) => OnResetHwid())
-    myGui.Add("Text", "x10 y680 w880 h1 Background" COLORS.border)
-
-    myGui.Add("Text", "x10 y690 w880 c" COLORS.textDim, "⚙️ System Maintenance")
-
-    myGui.Add("Text", "x10 y715 w120 c" COLORS.text, "Discord ID:")
-    resetHwidEdit := myGui.Add("Edit", "x130 y711 w370 h28 Background" COLORS.bgLight " c" COLORS.text)
-
-    resetHwidBtn := myGui.Add("Button", "x520 y711 w110 h28 Background" COLORS.warning, "Reset HWID")
-    resetHwidBtn.SetFont("s9 bold")
-    resetHwidBtn.OnEvent("Click", (*) => OnResetHwidBinding(resetHwidEdit))
-
     ; ===== EVENTS =====
     banBtn.OnEvent("Click", (*) => OnBanDiscordId(banEdit, bannedLbl))
     unbanBtn.OnEvent("Click", (*) => OnUnbanDiscordId(banEdit, bannedLbl))
@@ -339,30 +468,20 @@ CreateAdminGui() {
     addAdminBtn.OnEvent("Click", (*) => OnAddAdminDiscord(adminEdit, adminLbl))
     delAdminBtn.OnEvent("Click", (*) => OnRemoveAdminDiscord(adminEdit, adminLbl))
     
+    resetHwidBtn.OnEvent("Click", (*) => OnResetHwidBinding(resetHwidEdit))
+    
     refreshBtn.OnEvent("Click", (*) => LoadGlobalSessionLogIntoListView(lv, 200))
     clearLogBtn.OnEvent("Click", (*) => OnClearLog(lv))
     setPassBtn.OnEvent("Click", (*) => OnSetGlobalPassword())
     copySnippetBtn.OnEvent("Click", (*) => OnCopySnippet())
+    checkUpdateBtn.OnEvent("Click", (*) => CheckForUpdates())
     exitBtn.OnEvent("Click", (*) => ExitApp())
     
     myGui.OnEvent("Close", (*) => ExitApp())
-    myGui.Show("w900 h750 Center")
+    myGui.Show("w900 h770 Center")
     
     ; Load logs on startup
     LoadGlobalSessionLogIntoListView(lv, 200)
-}
-
-OnResetHwid() {
-    did := InputBox("Enter Discord ID to reset HWID binding:", "Reset HWID").Value
-    if (did = "")
-        return
-    
-    try {
-        AdminPost("/admin/reset-hwid", '{"discord_id":"' did '"}')
-        MsgBox "✅ HWID binding reset for: " did, "Success", "Iconi"
-    } catch as err {
-        MsgBox "❌ Failed: " err.Message, "Error", "Icon!"
-    }
 }
 
 OnResetHwidBinding(editControl) {
