@@ -122,11 +122,31 @@ DownloadAndInstallUpdate(updateUrl) {
         
         tempFile := tempDir "\Admin_new.ahk"
         
-        ; Download new version
-        Download(updateUrl, tempFile)
+        ; Download new version using SafeDownload
+        ToolTip "Downloading admin update..."
         
+        if !SafeDownload(updateUrl, tempFile, 30000) {
+            ToolTip
+            throw Error("Download failed or timed out")
+        }
+        
+        ToolTip
+        
+        ; Validate downloaded file
         if !FileExist(tempFile)
-            throw Error("Download failed")
+            throw Error("Download failed - file not found")
+        
+        fileSize := 0
+        Loop Files, tempFile
+            fileSize := A_LoopFileSize
+        
+        if (fileSize < 1000)
+            throw Error("Downloaded file is too small (" fileSize " bytes)")
+        
+        ; Verify it's a valid AHK script
+        content := FileRead(tempFile, "UTF-8")
+        if (!InStr(content, "#Requires AutoHotkey v2.0"))
+            throw Error("Not a valid AHK v2 script")
         
         ; Send webhook notification
         try {
@@ -166,6 +186,44 @@ DownloadAndInstallUpdate(updateUrl) {
             "AHK Vault - Update Error",
             "Icon!"
         )
+    }
+}
+
+SafeDownload(url, out, timeoutMs := 10000) {
+    if !url || !out
+        return false
+    
+    try {
+        if FileExist(out)
+            FileDelete out
+        
+        ToolTip "Downloading..."
+        Download url, out
+        
+        startTime := A_TickCount
+        while !FileExist(out) {
+            if (A_TickCount - startTime > timeoutMs) {
+                ToolTip
+                return false
+            }
+            Sleep 100
+        }
+        
+        ToolTip
+        
+        fileSize := 0
+        Loop Files, out
+            fileSize := A_LoopFileSize
+        
+        if (fileSize < 100) {
+            try FileDelete out
+            return false
+        }
+        
+        return true
+    } catch {
+        ToolTip
+        return false
     }
 }
 
@@ -352,12 +410,13 @@ CreateAdminGui() {
     ; ===== LOGIN LOG =====
     myGui.Add("Text", "x10 y85 w880 c" COLORS.textDim, "✅ Login Log (successful logins) - Right-click for options")
     lv := myGui.Add("ListView", "x10 y105 w880 h210 Background" COLORS.card " c" COLORS.text, 
-        ["Time", "PC Name", "Discord ID", "Role", "HWID"])
+        ["Time", "Username", "PC Name", "Discord ID", "Role", "HWID"])
     lv.ModifyCol(1, 140)
-    lv.ModifyCol(2, 120)
-    lv.ModifyCol(3, 120)
-    lv.ModifyCol(4, 80)
-    lv.ModifyCol(5, 120)
+    lv.ModifyCol(2, 100)
+    lv.ModifyCol(3, 100)
+    lv.ModifyCol(4, 120)
+    lv.ModifyCol(5, 70)
+    lv.ModifyCol(6, 120)
     
     ; Add context menu to ListView
     lv.OnEvent("ContextMenu", (*) => ShowLogContextMenu(lv, bannedLbl, bannedHwidLbl, adminLbl))
@@ -533,9 +592,10 @@ ShowLogContextMenu(lv, bannedLbl, bannedHwidLbl, adminLbl) {
     }
     
     ; Get data from selected row
-    discordId := lv.GetText(rowNum, 3)
-    hwid := lv.GetText(rowNum, 5)
-    pcName := lv.GetText(rowNum, 2)
+    username := lv.GetText(rowNum, 2)
+    pcName := lv.GetText(rowNum, 3)
+    discordId := lv.GetText(rowNum, 4)
+    hwid := lv.GetText(rowNum, 6)
     
     if (discordId = "" || hwid = "") {
         MsgBox "Invalid row data.", "Error", "Icon!"
@@ -1147,6 +1207,7 @@ LoadGlobalSessionLogIntoListView(lv, limit := 200) {
         pos := p + StrLen(one)
 
         t    := JsonExtractAny(one, "time")
+        user := JsonExtractAny(one, "user")
         pc   := JsonExtractAny(one, "pc")
         did  := JsonExtractAny(one, "discord_id")
         role := JsonExtractAny(one, "role")
@@ -1160,11 +1221,11 @@ LoadGlobalSessionLogIntoListView(lv, limit := 200) {
             continue
         
         seen[uniqueKey] := true
-        lv.Add("", t, pc, did, role, hwid)
+        lv.Add("", t, user, pc, did, role, hwid)
     }
     
     ; Auto-size columns to fit content
-    Loop 5
+    Loop 6
         lv.ModifyCol(A_Index, "AutoHdr")
 }
 
