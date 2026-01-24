@@ -454,7 +454,10 @@ CreateAdminGui() {
     checkUpdateBtn.SetFont("s10")
     exitBtn := myGui.Add("Button", "x760 y720 w130 h34 Background" COLORS.danger, "❌ Exit")
     exitBtn.SetFont("s10 bold")
-    
+    reviewsBtn := myGui.Add("Button", "x10 y770 w150 h34 Background" COLORS.accentAlt, "💬 View Reviews")
+    reviewsBtn.SetFont("s10")
+    reviewsBtn.OnEvent("Click", (*) => ShowAllReviewsPanel())
+
     ; ===== EVENTS =====
     banBtn.OnEvent("Click", (*) => OnBanDiscordId(banEdit, bannedLbl))
     unbanBtn.OnEvent("Click", (*) => OnUnbanDiscordId(banEdit, bannedLbl))
@@ -1318,6 +1321,306 @@ RefreshAdminDiscordLabel(adminLbl) {
     }
 }
 
+ShowAllReviewsPanel() {
+    global COLORS, WORKER_URL, MASTER_KEY
+    
+    reviewsGui := Gui("+Resize", "AHK Vault - All Reviews")
+    reviewsGui.BackColor := COLORS.bg
+    reviewsGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    reviewsGui.Add("Text", "x0 y0 w900 h70 Background" COLORS.accent)
+    reviewsGui.Add("Text", "x20 y20 w860 h30 c" COLORS.text " BackgroundTrans", "💬 Reviews Management").SetFont("s18 bold")
+    
+    ; Stats
+    statsText := reviewsGui.Add("Text", "x20 y85 w860 c" COLORS.textDim, "Loading...")
+    
+    ; Reviews ListView
+    lv := reviewsGui.Add("ListView", "x20 y115 w860 h450 Background" COLORS.card " c" COLORS.text,
+        ["Macro", "User", "Vote", "Comment", "Date", "Rating ID"])
+    
+    lv.ModifyCol(1, 150)  ; Macro
+    lv.ModifyCol(2, 120)  ; User
+    lv.ModifyCol(3, 60)   ; Vote
+    lv.ModifyCol(4, 300)  ; Comment
+    lv.ModifyCol(5, 120)  ; Date
+    lv.ModifyCol(6, 0)    ; Hidden Rating ID
+    
+    ; Context menu
+    lv.OnEvent("ContextMenu", (*) => ShowReviewContextMenu(lv))
+    
+    ; Buttons
+    refreshBtn := reviewsGui.Add("Button", "x20 y580 w140 h40 Background" COLORS.card, "🔄 Refresh")
+    refreshBtn.SetFont("s10")
+    refreshBtn.OnEvent("Click", (*) => LoadAllReviews(lv, statsText))
+    
+    deleteBtn := reviewsGui.Add("Button", "x170 y580 w140 h40 Background" COLORS.danger, "🗑️ Delete Selected")
+    deleteBtn.SetFont("s10")
+    deleteBtn.OnEvent("Click", (*) => DeleteSelectedReview(lv, statsText))
+    
+    filterLikesBtn := reviewsGui.Add("Button", "x320 y580 w100 h40 Background" COLORS.success, "👍 Likes Only")
+    filterLikesBtn.SetFont("s9")
+    filterLikesBtn.OnEvent("Click", (*) => FilterReviews(lv, "like"))
+    
+    filterDislikesBtn := reviewsGui.Add("Button", "x430 y580 w120 h40 Background" COLORS.danger, "👎 Dislikes Only")
+    filterDislikesBtn.SetFont("s9")
+    filterDislikesBtn.OnEvent("Click", (*) => FilterReviews(lv, "dislike"))
+    
+    showAllBtn := reviewsGui.Add("Button", "x560 y580 w100 h40 Background" COLORS.card, "Show All")
+    showAllBtn.SetFont("s9")
+    showAllBtn.OnEvent("Click", (*) => LoadAllReviews(lv, statsText))
+    
+    exportBtn := reviewsGui.Add("Button", "x670 y580 w80 h40 Background" COLORS.accentAlt, "📋 Export")
+    exportBtn.SetFont("s9")
+    exportBtn.OnEvent("Click", (*) => ExportReviewsToCSV(lv))
+    
+    closeBtn := reviewsGui.Add("Button", "x760 y580 w120 h40 Background" COLORS.danger, "Close")
+    closeBtn.SetFont("s10 bold")
+    closeBtn.OnEvent("Click", (*) => reviewsGui.Destroy())
+    
+    reviewsGui.OnEvent("Close", (*) => reviewsGui.Destroy())
+    reviewsGui.Show("w900 h640 Center")
+    
+    ; Load reviews
+    LoadAllReviews(lv, statsText)
+}
+
+LoadAllReviews(lv, statsControl) {
+    global WORKER_URL, MASTER_KEY
+    
+    lv.Delete()
+    statsControl.Value := "Loading reviews..."
+    
+    try {
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(15000, 15000, 15000, 15000)
+        req.Open("GET", WORKER_URL "/admin/ratings/all?limit=500", false)
+        req.SetRequestHeader("X-Master-Key", MASTER_KEY)
+        req.Send()
+        
+        if (req.Status != 200) {
+            statsControl.Value := "❌ Failed to load reviews: " req.Status
+            return
+        }
+        
+        resp := req.ResponseText
+        
+        ; Parse ratings
+        if !RegExMatch(resp, '(?s)"ratings"\s*:\s*\[(.*?)\]', &m) {
+            statsControl.Value := "No reviews found"
+            return
+        }
+        
+        ratingsBlock := m[1]
+        pos := 1
+        count := 0
+        likes := 0
+        dislikes := 0
+        
+        while (p := RegExMatch(ratingsBlock, '(?s)\{.*?\}', &mm, pos)) {
+            reviewJson := mm[0]
+            pos := p + StrLen(reviewJson)
+            
+            ; Parse individual review
+            macroId := JsonExtractAny(reviewJson, "macro_id")
+            username := JsonExtractAny(reviewJson, "username")
+            vote := JsonExtractAny(reviewJson, "vote")
+            comment := JsonExtractAny(reviewJson, "comment")
+            timestamp := JsonExtractAny(reviewJson, "timestamp")
+            ratingId := JsonExtractAny(reviewJson, "rating_id")
+            
+            ; Count stats
+            if (vote = "like")
+                likes++
+            else if (vote = "dislike")
+                dislikes++
+            
+            ; Format data
+            macroName := FormatMacroId(macroId)
+            voteDisplay := vote = "like" ? "👍 Like" : "👎 Dislike"
+            dateStr := FormatTimestampAdmin(timestamp)
+            
+            ; Truncate comment for display
+            displayComment := comment
+            if (StrLen(displayComment) > 50)
+                displayComment := SubStr(displayComment, 1, 50) "..."
+            
+            ; Add to ListView
+            lv.Add("", macroName, username, voteDisplay, displayComment, dateStr, ratingId)
+            
+            count++
+        }
+        
+        ; Update stats
+        if (count > 0) {
+            ratio := Round((likes / count) * 100)
+            statsControl.Value := "📊 Total: " count " | 👍 Likes: " likes " | 👎 Dislikes: " dislikes " | Positive: " ratio "%"
+        } else {
+            statsControl.Value := "No reviews found"
+        }
+        
+    } catch as err {
+        statsControl.Value := "❌ Error: " err.Message
+    }
+}
+
+FormatMacroId(macroId) {
+    ; Convert "GameName_MacroName" to readable format
+    name := StrReplace(macroId, "_", " ")
+    
+    ; Remove path separators
+    name := StrReplace(name, "C", "")
+    name := StrReplace(name, "dat", "")
+    
+    ; Capitalize first letter of each word
+    words := StrSplit(name, " ")
+    result := ""
+    for word in words {
+        if (word != "")
+            result .= SubStr(word, 1, 1) . StrLower(SubStr(word, 2)) . " "
+    }
+    
+    return Trim(result)
+}
+
+FilterReviews(lv, filterType) {
+    ; Hide rows that don't match filter
+    Loop lv.GetCount() {
+        voteText := lv.GetText(A_Index, 3)
+        
+        if (filterType = "like") {
+            ; Show only likes
+            if !InStr(voteText, "👍")
+                lv.Modify(A_Index, "-Select")
+        } else if (filterType = "dislike") {
+            ; Show only dislikes
+            if !InStr(voteText, "👎")
+                lv.Modify(A_Index, "-Select")
+        }
+    }
+}
+
+ShowReviewContextMenu(lv) {
+    rowNum := lv.GetNext()
+    if (rowNum = 0) {
+        MsgBox "Please select a review first.", "No Selection", "Icon!"
+        return
+    }
+    
+    macroName := lv.GetText(rowNum, 1)
+    username := lv.GetText(rowNum, 2)
+    ratingId := lv.GetText(rowNum, 6)
+    
+    contextMenu := Menu()
+    contextMenu.Add("🗑️ Delete This Review", (*) => DeleteReviewById(lv, rowNum, ratingId))
+    contextMenu.Add("📋 Copy Rating ID", (*) => (A_Clipboard := ratingId, ToolTip("Copied!"), SetTimer(() => ToolTip(), -2000)))
+    contextMenu.Add("👤 Copy Username", (*) => (A_Clipboard := username, ToolTip("Copied!"), SetTimer(() => ToolTip(), -2000)))
+    
+    contextMenu.Show()
+}
+
+DeleteSelectedReview(lv, statsControl) {
+    rowNum := lv.GetNext()
+    
+    if (rowNum = 0) {
+        MsgBox "Please select a review to delete.", "No Selection", "Icon!"
+        return
+    }
+    
+    ratingId := lv.GetText(rowNum, 6)
+    username := lv.GetText(rowNum, 2)
+    macroName := lv.GetText(rowNum, 1)
+    
+    choice := MsgBox(
+        "Delete review by " username " for " macroName "?`n`nThis cannot be undone.",
+        "Confirm Delete",
+        "YesNo Icon? Default2"
+    )
+    
+    if (choice = "No")
+        return
+    
+    DeleteReviewById(lv, rowNum, ratingId)
+}
+
+DeleteReviewById(lv, rowNum, ratingId) {
+    global WORKER_URL, MASTER_KEY, SESSION_TOKEN_FILE
+    
+    if !FileExist(SESSION_TOKEN_FILE) {
+        MsgBox "Not logged in.", "Error", "Icon!"
+        return
+    }
+    
+    try {
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+        
+        body := '{"session_token":"' JsonEscape(sessionToken) '","rating_id":"' JsonEscape(ratingId) '"}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(15000, 15000, 15000, 15000)
+        req.Open("DELETE", WORKER_URL "/ratings/delete", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.SetRequestHeader("X-Master-Key", MASTER_KEY)
+        req.Send(body)
+        
+        if (req.Status = 200) {
+            lv.Delete(rowNum)
+            ToolTip "✅ Review deleted"
+            SetTimer () => ToolTip(), -2000
+            
+            ; Send webhook notification
+            details := '{"name":"Action","value":"Delete Review","inline":true},'
+                     . '{"name":"Rating ID","value":"' ratingId '","inline":true},'
+                     . '{"name":"Admin","value":"' A_UserName '@' A_ComputerName '","inline":true}'
+            SendAdminActionWebhook("Review Deleted", details, 15158332)
+        } else {
+            MsgBox "Failed to delete: " req.Status, "Error", "Icon!"
+        }
+    } catch as err {
+        MsgBox "Error: " err.Message, "Error", "Icon!"
+    }
+}
+
+ExportReviewsToCSV(lv) {
+    try {
+        ; Generate CSV content
+        csv := "Macro,Username,Vote,Comment,Date,Rating ID`n"
+        
+        Loop lv.GetCount() {
+            macroName := lv.GetText(A_Index, 1)
+            username := lv.GetText(A_Index, 2)
+            vote := lv.GetText(A_Index, 3)
+            comment := lv.GetText(A_Index, 4)
+            date := lv.GetText(A_Index, 5)
+            ratingId := lv.GetText(A_Index, 6)
+            
+            ; Escape commas and quotes in CSV
+            comment := StrReplace(comment, '"', '""')
+            if InStr(comment, ",")
+                comment := '"' comment '"'
+            
+            csv .= macroName "," username "," vote "," comment "," date "," ratingId "`n"
+        }
+        
+        ; Save file
+        filename := "reviews_export_" FormatTime(, "yyyyMMdd_HHmmss") ".csv"
+        filepath := A_Desktop "\" filename
+        
+        if FileExist(filepath)
+            FileDelete filepath
+        
+        FileAppend csv, filepath, "UTF-8"
+        
+        MsgBox "✅ Exported to:`n`n" filepath, "Export Complete", "Iconi"
+        
+        ; Open folder
+        Run 'explorer /select,"' filepath '"'
+        
+    } catch as err {
+        MsgBox "Export failed: " err.Message, "Error", "Icon!"
+    }
+}
+
 ; ========== HELPER FUNCTIONS ==========
 GetHardwareId() {
     hwid := ""
@@ -1377,6 +1680,32 @@ GetHardwareId() {
     return String(hash)
 }
 
+FormatTimestampAdmin(timestamp) {
+    try {
+        if (timestamp = "" || timestamp = "0")
+            return "Unknown"
+        
+        ; Convert milliseconds to seconds
+        seconds := Integer(timestamp) / 1000
+        
+        ; Calculate difference from now
+        nowSeconds := DateDiff(A_Now, "19700101000000", "Seconds")
+        diff := nowSeconds - seconds
+        
+        if (diff < 3600)
+            return Floor(diff / 60) "m ago"
+        else if (diff < 86400)
+            return Floor(diff / 3600) "h ago"
+        else if (diff < 604800)
+            return Floor(diff / 86400) "d ago"
+        else
+            return Floor(diff / 604800) "w ago"
+    } catch {
+        return "Recently"
+    }
+}
+
+; Helper function for JSON escaping (if not already present)
 JsonEscape(s) {
     s := StrReplace(s, "\", "\\")
     s := StrReplace(s, '"', '\"')

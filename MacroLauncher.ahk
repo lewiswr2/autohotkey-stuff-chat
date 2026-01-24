@@ -18,6 +18,7 @@ global MANIFEST_URL := DecryptManifestUrl()
 global mainGui := 0
 global MACHINE_KEY := ""
 global DISCORD_ID_FILE := ""
+global RATINGS_CACHE := Map()
 
 global COLORS := {
     bg: "0x0a0e14",
@@ -1009,6 +1010,342 @@ ManualUpdate(*) {
     }
 }
 
+GetMacroRatings(macroPath) {
+    global WORKER_URL, RATINGS_CACHE
+    
+    macroId := GetMacroKey(macroPath)
+    
+    ; Check cache first (5 minute TTL)
+    if RATINGS_CACHE.Has(macroId) {
+        cached := RATINGS_CACHE[macroId]
+        if (A_TickCount - cached.time < 300000) ; 5 minutes
+            return cached.data
+    }
+    
+    try {
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("GET", WORKER_URL "/ratings/" macroId, false)
+        req.Send()
+        
+        if (req.Status = 200) {
+            resp := req.ResponseText
+            
+            ; Parse response
+            ratings := ParseRatingsResponse(resp)
+            
+            ; Cache it
+            RATINGS_CACHE[macroId] := {
+                data: ratings,
+                time: A_TickCount
+            }
+            
+            return ratings
+        }
+    } catch {
+    }
+    
+    return { likes: 0, dislikes: 0, total: 0, ratio: 0, reviews: [] }
+}
+
+ParseRatingsResponse(json) {
+    result := { likes: 0, dislikes: 0, total: 0, ratio: 0, reviews: [] }
+    
+    try {
+        ; Extract stats
+        if RegExMatch(json, '"likes"\s*:\s*(\d+)', &m)
+            result.likes := Integer(m[1])
+        
+        if RegExMatch(json, '"dislikes"\s*:\s*(\d+)', &m)
+            result.dislikes := Integer(m[1])
+        
+        if RegExMatch(json, '"total"\s*:\s*(\d+)', &m)
+            result.total := Integer(m[1])
+        
+        if RegExMatch(json, '"ratio"\s*:\s*(\d+)', &m)
+            result.ratio := Integer(m[1])
+        
+        ; Extract reviews array
+        if RegExMatch(json, '(?s)"ratings"\s*:\s*\[(.*?)\]', &m) {
+            reviewsBlock := m[1]
+            pos := 1
+            
+            while (p := RegExMatch(reviewsBlock, '(?s)\{.*?\}', &mm, pos)) {
+                reviewJson := mm[0]
+                pos := p + StrLen(reviewJson)
+                
+                review := {}
+                
+                if RegExMatch(reviewJson, '"username"\s*:\s*"([^"]+)"', &u)
+                    review.username := u[1]
+                
+                if RegExMatch(reviewJson, '"vote"\s*:\s*"([^"]+)"', &v)
+                    review.vote := v[1]
+                
+                if RegExMatch(reviewJson, '"comment"\s*:\s*"([^"]*)"', &c) {
+                    comment := c[1]
+                    comment := StrReplace(comment, '\n', "`n")
+                    comment := StrReplace(comment, '\"', '"')
+                    review.comment := comment
+                }
+                
+                if RegExMatch(reviewJson, '"timestamp"\s*:\s*(\d+)', &t)
+                    review.timestamp := Integer(t[1])
+                
+                if RegExMatch(reviewJson, '"discord_id"\s*:\s*"([^"]+)"', &d)
+                    review.discord_id := d[1]
+                
+                result.reviews.Push(review)
+            }
+        }
+    } catch {
+    }
+    
+    return result
+}
+
+FormatLikeRatio(likes, dislikes) {
+    total := likes + dislikes
+    if (total = 0)
+        return "No votes yet"
+    
+    return "👍 " likes " | 👎 " dislikes " (" Round((likes / total) * 100) "% positive)"
+}
+
+ShowRatingsDialog(macroPath, macroInfo) {
+    global COLORS, SESSION_TOKEN_FILE
+    
+    macroId := GetMacroKey(macroPath)
+    ratings := GetMacroRatings(macroPath)
+    
+    ratingsGui := Gui("+Resize", macroInfo.Title " - Reviews")
+    ratingsGui.BackColor := COLORS.bg
+    ratingsGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header with like/dislike stats
+    ratingsGui.Add("Text", "x0 y0 w700 h120 Background" COLORS.card)
+    
+    ; Like/Dislike display
+    likeText := ratingsGui.Add("Text", "x20 y20 w200 h60 Center Background" COLORS.success " c" COLORS.text, 
+        "👍`n" ratings.likes)
+    likeText.SetFont("s24 bold")
+    
+    dislikeText := ratingsGui.Add("Text", "x240 y20 w200 h60 Center Background" COLORS.danger " c" COLORS.text,
+        "👎`n" ratings.dislikes)
+    dislikeText.SetFont("s24 bold")
+    
+    ; Ratio text
+    if (ratings.total > 0) {
+        ratioText := ratingsGui.Add("Text", "x20 y90 w420 Center c" COLORS.textDim " BackgroundTrans",
+            ratings.ratio "% positive (" ratings.total " total votes)")
+        ratioText.SetFont("s10")
+    } else {
+        ratioText := ratingsGui.Add("Text", "x20 y90 w420 Center c" COLORS.textDim " BackgroundTrans",
+            "No votes yet - be the first to vote!")
+        ratioText.SetFont("s10")
+    }
+    
+    ; Vote buttons
+    if FileExist(SESSION_TOKEN_FILE) {
+        likeBtn := ratingsGui.Add("Button", "x480 y30 w95 h35 Background" COLORS.success, "👍 Like")
+        likeBtn.SetFont("s10 bold")
+        likeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "like", ratingsGui))
+        
+        dislikeBtn := ratingsGui.Add("Button", "x585 y30 w95 h35 Background" COLORS.danger, "👎 Dislike")
+        dislikeBtn.SetFont("s10 bold")
+        dislikeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "dislike", ratingsGui))
+    } else {
+        loginText := ratingsGui.Add("Text", "x480 y30 w200 h35 c" COLORS.textDim " BackgroundTrans Center",
+            "Login to vote")
+        loginText.SetFont("s9")
+    }
+    
+    ; Reviews section
+    ratingsGui.Add("Text", "x20 y130 w660 c" COLORS.text, "Recent Reviews").SetFont("s12 bold")
+    
+    reviewsY := 160
+    
+    if (ratings.reviews.Length = 0) {
+        noReviewText := ratingsGui.Add("Text", "x20 y" reviewsY " w660 h100 c" COLORS.textDim " Center",
+            "No reviews yet. Be the first to leave feedback!")
+        noReviewText.SetFont("s10")
+        reviewsY += 100
+    } else {
+        ; Show up to 8 most recent reviews
+        maxReviews := Min(8, ratings.reviews.Length)
+        
+        Loop maxReviews {
+            review := ratings.reviews[A_Index]
+            
+            ; Review card
+            cardHeight := review.comment != "" ? 100 : 60
+            ratingsGui.Add("Text", "x20 y" reviewsY " w660 h" cardHeight " Background" COLORS.cardHover)
+            
+            ; Username and vote icon
+            voteIcon := review.vote = "like" ? "👍" : "👎"
+            voteColor := review.vote = "like" ? COLORS.success : COLORS.danger
+            
+            ratingsGui.Add("Text", "x35 y" (reviewsY + 10) " w40 h40 Background" voteColor " Center c" COLORS.text,
+                voteIcon).SetFont("s20")
+            
+            ratingsGui.Add("Text", "x85 y" (reviewsY + 10) " w300 c" COLORS.text " BackgroundTrans",
+                review.username).SetFont("s10 bold")
+            
+            ; Date
+            dateStr := FormatTimestamp(review.timestamp)
+            ratingsGui.Add("Text", "x85 y" (reviewsY + 30) " w300 c" COLORS.textDim " BackgroundTrans",
+                dateStr).SetFont("s8")
+            
+            ; Comment
+            if (review.comment != "") {
+                commentText := review.comment
+                if (StrLen(commentText) > 120)
+                    commentText := SubStr(commentText, 1, 120) "..."
+                
+                ratingsGui.Add("Text", "x35 y" (reviewsY + 60) " w630 c" COLORS.text " BackgroundTrans",
+                    '"' commentText '"').SetFont("s9")
+            }
+            
+            reviewsY += cardHeight + 10
+        }
+        
+        if (ratings.reviews.Length > 8) {
+            ratingsGui.Add("Text", "x20 y" reviewsY " w660 c" COLORS.textDim " Center",
+                "Showing 8 of " ratings.reviews.Length " reviews")
+            reviewsY += 30
+        }
+    }
+    
+    ; Close button
+    closeBtn := ratingsGui.Add("Button", "x275 y" (reviewsY + 10) " w150 h40 Background" COLORS.danger, "Close")
+    closeBtn.SetFont("s10 bold")
+    closeBtn.OnEvent("Click", (*) => ratingsGui.Destroy())
+    
+    ratingsGui.OnEvent("Close", (*) => ratingsGui.Destroy())
+    ratingsGui.Show("w700 h" (reviewsY + 70) " Center")
+}
+
+SubmitVote(macroId, voteType, parentGui := 0) {
+    global COLORS
+    
+    ; Show comment dialog
+    commentGui := Gui("+AlwaysOnTop", "Add Comment (Optional)")
+    commentGui.BackColor := COLORS.bg
+    commentGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    commentGui.Add("Text", "x0 y0 w500 h60 Background" COLORS.accent)
+    voteEmoji := voteType = "like" ? "👍" : "👎"
+    commentGui.Add("Text", "x20 y15 w460 c" COLORS.text " BackgroundTrans", 
+        voteEmoji " " (voteType = "like" ? "Like" : "Dislike") " this macro").SetFont("s14 bold")
+    
+    ; Comment box
+    commentGui.Add("Text", "x20 y80 w460 c" COLORS.text, "Leave a comment (optional):")
+    commentEdit := commentGui.Add("Edit", "x20 y110 w460 h100 Background" COLORS.bgLight " c" COLORS.text " Multi")
+    
+    commentGui.Add("Text", "x20 y220 w460 c" COLORS.textDim, "Maximum 500 characters").SetFont("s8")
+    
+    ; Status text
+    statusText := commentGui.Add("Text", "x20 y245 w460 Center c" COLORS.danger, "")
+    
+    ; Buttons
+    submitBtn := commentGui.Add("Button", "x20 y275 w220 h40 Background" COLORS.success, "Submit Vote")
+    submitBtn.SetFont("s10 bold")
+    
+    skipBtn := commentGui.Add("Button", "x260 y275 w220 h40 Background" COLORS.warning, "Skip Comment")
+    skipBtn.SetFont("s10 bold")
+    
+    submitBtn.OnEvent("Click", (*) => SubmitVoteWithComment(
+        macroId, 
+        voteType, 
+        commentEdit.Value, 
+        statusText, 
+        commentGui, 
+        parentGui
+    ))
+    
+    skipBtn.OnEvent("Click", (*) => SubmitVoteWithComment(
+        macroId, 
+        voteType, 
+        "", 
+        statusText, 
+        commentGui, 
+        parentGui
+    ))
+    
+    commentGui.OnEvent("Close", (*) => commentGui.Destroy())
+    commentGui.Show("w500 h335 Center")
+}
+
+SubmitVoteWithComment(macroId, voteType, comment, statusControl, commentGui, parentGui) {
+    global WORKER_URL, SESSION_TOKEN_FILE, RATINGS_CACHE
+    
+    if !FileExist(SESSION_TOKEN_FILE) {
+        statusControl.Value := "Not logged in"
+        return
+    }
+    
+    statusControl.Value := "Submitting..."
+    
+    try {
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+        
+        body := '{"session_token":"' JsonEscape(sessionToken) '","macro_id":"' JsonEscape(macroId) '","vote":"' voteType '","comment":"' JsonEscape(comment) '"}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(15000, 15000, 15000, 15000)
+        req.Open("POST", WORKER_URL "/ratings/submit", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        if (req.Status = 200) {
+            ; Clear cache for this macro
+            if RATINGS_CACHE.Has(macroId)
+                RATINGS_CACHE.Delete(macroId)
+            
+            statusControl.Value := "✅ Vote submitted!"
+            SoundBeep(1000, 100)
+            
+            SetTimer(() => (
+                commentGui.Destroy(),
+                parentGui ? parentGui.Destroy() : 0
+            ), -1500)
+        } else {
+            statusControl.Value := "Failed to submit: " req.Status
+            SoundBeep(500, 200)
+        }
+    } catch as err {
+        statusControl.Value := "Error: " err.Message
+        SoundBeep(500, 200)
+    }
+}
+
+FormatTimestamp(timestamp) {
+    ; Convert timestamp to readable date
+    try {
+        ; timestamp is milliseconds since epoch
+        seconds := timestamp / 1000
+        
+        ; Get current time in seconds
+        nowSeconds := DateDiff(A_Now, "19700101000000", "Seconds")
+        
+        diff := nowSeconds - seconds
+        
+        if (diff < 60)
+            return "Just now"
+        else if (diff < 3600)
+            return Floor(diff / 60) " minutes ago"
+        else if (diff < 86400)
+            return Floor(diff / 3600) " hours ago"
+        else if (diff < 604800)
+            return Floor(diff / 86400) " days ago"
+        else
+            return Floor(diff / 604800) " weeks ago"
+    } catch {
+        return "Recently"
+    }
+}
+
 SafeDownload(url, out, timeoutMs := 10000) {
     if !url || !out
         return false
@@ -1550,6 +1887,24 @@ CreateFullWidthCard(win, item, x, y, w, h) {
     versionCtrl := win.Add("Text", "x" (x + 120) " y" (y + 75) " w60 h22 Background" COLORS.accentAlt " c" COLORS.text " Center", "v" item.info.Version)
     versionCtrl.SetFont("s9 bold")
     win.__cards.Push(versionCtrl)
+    
+    ratings := GetMacroRatings(item.path)
+    
+    if (ratings.total > 0) {
+        ; Show like/dislike ratio
+        ratingDisplay := "👍 " ratings.likes " | 👎 " ratings.dislikes " (" ratings.ratio "%)"
+        ratingCtrl := win.Add("Text", "x" (x + 120) " y" (y + 95) " w250 c" COLORS.textDim " BackgroundTrans", ratingDisplay)
+        ratingCtrl.SetFont("s9")
+        win.__cards.Push(ratingCtrl)
+    }
+    
+    ; Reviews button
+    reviewsBtn := win.Add("Button", "x" (x + w - 210) " y" (y + 65) " w100 h30 Background" COLORS.accentAlt, "💬 Reviews")
+    reviewsBtn.SetFont("s9")
+    currentPath := item.path
+    currentInfo := item.info
+    reviewsBtn.OnEvent("Click", (*) => ShowRatingsDialog(currentPath, currentInfo))
+    win.__cards.Push(reviewsBtn)
     
     runCount := GetRunCount(item.path)
     if (runCount > 0) {
