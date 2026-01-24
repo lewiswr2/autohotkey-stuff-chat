@@ -8,6 +8,7 @@ global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global WEBHOOK_URL := "https://discord.com/api/webhooks/1459209245294592070/EGWiUXTNSgUY1RrGwwCCLyM22S8Xln1PwPoj10wdqCY1YsPQCT38cLBGgkZcSccYX8r_"
 global MASTER_KEY := "A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7A9fK3mQ2Z7"
 global CURRENT_VERSION := "1.0.0"
+global SESSION_TOKEN_FILE := ""
 
 global COLORS := {
     bg: "0x0a0e14",
@@ -170,12 +171,13 @@ DownloadAndInstallUpdate(updateUrl) {
 
 ; ========== INITIALIZATION ==========
 InitializeSecureVault() {
-    global SECURE_VAULT, MACHINE_KEY
+    global SECURE_VAULT, MACHINE_KEY, SESSION_TOKEN_FILE
     
     MACHINE_KEY := GetOrCreatePersistentKey()
     dirHash := HashString(MACHINE_KEY . A_ComputerName)
     APP_DIR := A_AppData "\..\LocalLow\Microsoft\CryptNetUrlCache\Content\{" SubStr(dirHash, 1, 8) "}"
     SECURE_VAULT := APP_DIR "\{" SubStr(dirHash, 9, 8) "}"
+    SESSION_TOKEN_FILE := SECURE_VAULT "\.session_token"  ; ← ADD THIS LINE
 }
 
 GetOrCreatePersistentKey() {
@@ -1703,6 +1705,17 @@ FormatTimestampAdmin(timestamp) {
     } catch {
         return "Recently"
     }
+}
+
+ReadUsername() {
+    global SECURE_VAULT
+    usernameFile := SECURE_VAULT "\username.txt"
+    
+    try {
+        if FileExist(usernameFile)
+            return Trim(FileRead(usernameFile, "UTF-8"))
+    }
+    return "Admin User"
 }
 
 ; Helper function for JSON escaping (if not already present)

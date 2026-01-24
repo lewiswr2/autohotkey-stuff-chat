@@ -17,6 +17,7 @@ global ADMIN_DISCORD_FILE := ""
 global HWID_BAN_FILE := ""
 global MACHINE_BAN_FILE := ""
 global HWID_BINDING_FILE := ""
+global USERNAME_FILE := ""
 
 ; Login Settings
 global MAX_ATTEMPTS := 10
@@ -83,7 +84,7 @@ InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
     global DISCORD_ID_FILE, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
     global HWID_BINDING_FILE, HWID_BAN_FILE, MACHINE_BAN_FILE
-    global MANIFEST_URL, MACRO_LAUNCHER_PATH, SESSION_TOKEN_FILE
+    global MANIFEST_URL, MACRO_LAUNCHER_PATH, SESSION_TOKEN_FILE, USERNAME_FILE
     
     MACHINE_KEY := GetOrCreatePersistentKey()
     
@@ -99,6 +100,7 @@ InitializeSecureVault() {
     MACRO_LAUNCHER_PATH := SECURE_VAULT "\MacroLauncher.ahk"
     SESSION_TOKEN_FILE := SECURE_VAULT "\.session_token"
     DISCORD_ID_FILE := SECURE_VAULT "\discord_id.txt"
+    USERNAME_FILE := SECURE_VAULT "\username.txt"  ; NEW
     DISCORD_BAN_FILE := SECURE_VAULT "\banned_discord_ids.txt"
     ADMIN_DISCORD_FILE := SECURE_VAULT "\admin_discord_ids.txt"
     HWID_BAN_FILE := SECURE_VAULT "\banned_hwids.txt"
@@ -129,6 +131,73 @@ InitializeSecureVault() {
         ExtractMacroLauncher()
         LoadWebhookUrl()
     }
+}
+
+; ========== NEW FUNCTIONS ==========
+
+ReadUsername() {
+    global USERNAME_FILE
+    try {
+        if FileExist(USERNAME_FILE)
+            return Trim(FileRead(USERNAME_FILE, "UTF-8"))
+    }
+    return ""
+}
+
+SaveUsername(username) {
+    global USERNAME_FILE
+    try {
+        if FileExist(USERNAME_FILE)
+            FileDelete USERNAME_FILE
+        FileAppend username, USERNAME_FILE, "UTF-8"
+        Run 'attrib +h +s "' USERNAME_FILE '"', , "Hide"
+        return true
+    }
+    return false
+}
+
+PromptUsernameSetup() {
+    global COLORS
+    
+    usernameGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Create Username")
+    usernameGui.BackColor := COLORS.bg
+    usernameGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    usernameGui.Add("Text", "x0 y0 w500 h70 Background" COLORS.accent)
+    usernameGui.Add("Text", "x20 y20 w460 h30 c" COLORS.text " BackgroundTrans", "🎮 Create Your Username").SetFont("s16 bold")
+    
+    ; Card
+    usernameGui.Add("Text", "x25 y90 w450 h200 Background" COLORS.card)
+    
+    usernameGui.Add("Text", "x45 y110 w410 c" COLORS.text " BackgroundTrans", "Choose a username for your account:")
+    usernameGui.Add("Text", "x45 y135 w410 c" COLORS.textDim " BackgroundTrans", "• 3-20 characters")
+    usernameGui.Add("Text", "x45 y155 w410 c" COLORS.textDim " BackgroundTrans", "• Letters, numbers, underscores, and hyphens only")
+    usernameGui.Add("Text", "x45 y175 w410 c" COLORS.textDim " BackgroundTrans", "• This will be visible in reviews and ratings")
+    
+    usernameEdit := usernameGui.Add("Edit", "x45 y205 w410 h30 Background" COLORS.bgLight " c" COLORS.text)
+    
+    statusText := usernameGui.Add("Text", "x45 y245 w410 Center c" COLORS.danger " BackgroundTrans", "")
+    
+    createBtn := usernameGui.Add("Button", "x165 y305 w170 h40 Background" COLORS.success, "Create Username")
+    createBtn.SetFont("s11 bold")
+    
+    resultUsername := ""
+    
+    createBtn.OnEvent("Click", (*) => (
+        username := Trim(usernameEdit.Value),
+        (!RegExMatch(username, "^[a-zA-Z0-9_-]{3,20}$")
+            ? (statusText.Value := "❌ Invalid format. Use 3-20 characters (letters, numbers, _ or -)", SoundBeep(700, 120))
+            : (resultUsername := username, usernameGui.Destroy())
+        )
+    ))
+    
+    usernameGui.OnEvent("Close", (*) => (resultUsername := "", usernameGui.Destroy()))
+    
+    usernameGui.Show("w500 h365 Center")
+    WinWaitClose(usernameGui.Hwnd)
+    
+    return resultUsername
 }
 
 ; ========== WEBHOOK FUNCTIONS ==========
@@ -1256,10 +1325,46 @@ SafeOpenURL(url) {
     }
 }
 
+; ========== NEW: OnChangeUsername ==========
+
+OnChangeUsername(parentGui) {
+    choice := MsgBox(
+        "Change your username?`n`n"
+        "Current: " ReadUsername() "`n`n"
+        "Note: Your previous ratings will still show your old username.",
+        "Change Username",
+        "YesNo Iconi"
+    )
+    
+    if (choice = "No")
+        return
+    
+    newUsername := PromptUsernameSetup()
+    if (newUsername != "" && newUsername != ReadUsername()) {
+        if SaveUsername(newUsername) {
+            MsgBox "✅ Username changed to: " newUsername "`n`nPlease restart to apply changes.", "Success", "Iconi T3"
+            ExitApp
+        } else {
+            MsgBox "Failed to save username.", "Error", "Icon!"
+        }
+    }
+}
+
 ; ================= LOGIN GUI =================
 
 CreateLoginGui() {
     global COLORS, gLoginGui
+    
+    ; Check if username exists, if not prompt for creation
+    existingUsername := ReadUsername()
+    if (existingUsername = "") {
+        newUsername := PromptUsernameSetup()
+        if (newUsername = "") {
+            MsgBox "Username is required to continue.", "AHK Vault", "Icon!"
+            ExitApp
+        }
+        SaveUsername(newUsername)
+    }
     
     gLoginGui := Gui("+AlwaysOnTop -MaximizeBox -MinimizeBox", "AHK Vault - Login")
     loginGui := gLoginGui
@@ -1272,48 +1377,50 @@ CreateLoginGui() {
     loginGui.Add("Text", "x0 y15 w500 h50 Center c" COLORS.text " BackgroundTrans", "🔐 AHK VAULT").SetFont("s22 bold")
     
     ; Login Card
-    loginGui.Add("Text", "x50 y100 w400 h250 Background" COLORS.card)
+    loginGui.Add("Text", "x50 y100 w400 h200 Background" COLORS.card)
     
     loginGui.Add("Text", "x70 y120 w360 h100 Center c" COLORS.text " BackgroundTrans", "Welcome Back").SetFont("s14 bold")
-    loginGui.Add("Text", "x70 y150 w360 Center c" COLORS.textDim " BackgroundTrans", "Enter your credentials to continue")
     
-    ; Username field
-    loginGui.Add("Text", "x70 y190 c" COLORS.text " BackgroundTrans", "Username:")
-    usernameEdit := loginGui.Add("Edit", "x70 y210 w360 h35 Background" COLORS.bgLight " c" COLORS.text)
+    currentUsername := ReadUsername()
+    loginGui.Add("Text", "x70 y150 w360 Center c" COLORS.textDim " BackgroundTrans", "Logged in as: " currentUsername)
     
-    ; Password field
-    loginGui.Add("Text", "x70 y260 c" COLORS.text " BackgroundTrans", "Password:")
-    passwordEdit := loginGui.Add("Edit", "x70 y280 w360 h35 Password Background" COLORS.bgLight " c" COLORS.text)
+    ; Password field only
+    loginGui.Add("Text", "x70 y190 c" COLORS.text " BackgroundTrans", "Password:")
+    passwordEdit := loginGui.Add("Edit", "x70 y210 w360 h35 Password Background" COLORS.bgLight " c" COLORS.text)
     
     ; Status text
-    statusText := loginGui.Add("Text", "x70 y325 w360 Center c" COLORS.danger " BackgroundTrans", "")
+    statusText := loginGui.Add("Text", "x70 y255 w360 Center c" COLORS.danger " BackgroundTrans", "")
     
     ; Login button
-    loginBtn := loginGui.Add("Button", "x70 y360 w360 h45 Background" COLORS.success, "LOGIN")
+    loginBtn := loginGui.Add("Button", "x70 y310 w360 h45 Background" COLORS.success, "LOGIN")
     loginBtn.SetFont("s12 bold")
     
+    ; Change username button
+    changeUserBtn := loginGui.Add("Button", "x70 y365 w175 h35 Background" COLORS.card, "Change Username")
+    changeUserBtn.SetFont("s9")
+    
     ; Discord link
-    discordBtn := loginGui.Add("Button", "x70 y420 w360 h35 Background" COLORS.accentAlt, "Join Our Discord")
-    discordBtn.SetFont("s10")
+    discordBtn := loginGui.Add("Button", "x255 y365 w175 h35 Background" COLORS.accentAlt, "Join Our Discord")
+    discordBtn.SetFont("s9")
     
     ; Footer
-    loginGui.Add("Text", "x0 y475 w500 h30 Center c" COLORS.textDim " BackgroundTrans", "AHK Vault v" LAUNCHER_VERSION)
+    loginGui.Add("Text", "x0 y420 w500 h30 Center c" COLORS.textDim " BackgroundTrans", "AHK Vault v" LAUNCHER_VERSION)
     
     ; Events
-    loginBtn.OnEvent("Click", (*) => AttemptLogin(usernameEdit.Value, passwordEdit.Value, statusText))
+    loginBtn.OnEvent("Click", (*) => AttemptLogin(currentUsername, passwordEdit.Value, statusText))
+    changeUserBtn.OnEvent("Click", (*) => OnChangeUsername(loginGui))
     discordBtn.OnEvent("Click", (*) => SafeOpenURL(DISCORD_URL))
     passwordEdit.OnEvent("Change", (*) => statusText.Value := "")
-    usernameEdit.OnEvent("Change", (*) => statusText.Value := "")
     
     loginGui.OnEvent("Close", (*) => ExitApp())
-    loginGui.Show("w500 h505 Center")
+    loginGui.Show("w500 h450 Center")
 }
 
 AttemptLogin(username, password, statusControl) {
     global SESSION_TOKEN_FILE, MAX_ATTEMPTS, LOCKOUT_FILE
 
-    if (Trim(username) = "" || Trim(password) = "") {
-        statusControl.Value := "Please enter both username and password"
+    if (Trim(password) = "") {
+        statusControl.Value := "Please enter password"
         SoundBeep(700, 120)
         return
     }
@@ -1340,7 +1447,7 @@ AttemptLogin(username, password, statusControl) {
             return
         }
         
-        ; Check if HWID mismatch (server validates binding during login)
+        ; Check if HWID mismatch
         if RegExMatch(resp, '"error"\s*:\s*"HWID mismatch"') {
             statusControl.Value := "Device not authorized - contact admin"
             SoundBeep(500, 200)
@@ -1369,7 +1476,6 @@ AttemptLogin(username, password, statusControl) {
                 
                 attemptCount := 0
                 
-                ; Send success webhook
                 SendLoginSuccessNotification(username, discordId)
                 
                 DestroyLoginGui()
@@ -1381,21 +1487,17 @@ AttemptLogin(username, password, statusControl) {
         
         ; Login failed
         attemptCount++
-        
-        ; Send fail webhook
         SendLoginFailNotification(username, "Invalid credentials (Attempt " attemptCount "/" MAX_ATTEMPTS ")")
         
         if (attemptCount >= MAX_ATTEMPTS) {
             try FileAppend A_Now, LOCKOUT_FILE
-            
             SendLockoutNotification(username)
-            
             statusControl.Value := "Too many failed attempts - locked for 30 minutes"
             SoundBeep(500, 300)
             ExitApp
         }
         
-        statusControl.Value := "Invalid credentials (" attemptCount "/" MAX_ATTEMPTS " attempts)"
+        statusControl.Value := "Invalid password (" attemptCount "/" MAX_ATTEMPTS " attempts)"
         SoundBeep(700, 120)
         
     } catch as err {

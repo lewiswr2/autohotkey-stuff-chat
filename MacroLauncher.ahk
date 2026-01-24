@@ -5,13 +5,14 @@
 global LAUNCHER_VERSION := "1.0.2"
 
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
-global SESSION_TOKEN_FILE := A_Temp "\.session_token"
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
 global WEBHOOK_URL := ""
 global APP_DIR := A_AppData "\..\LocalLow\Microsoft\CryptNetUrlCache\Content"
 MACHINE_KEY := GetOrCreatePersistentKey()
 dirHash := HashString(MACHINE_KEY . A_ComputerName)
-SECURE_VAULT := APP_DIR "\{" SubStr(dirHash, 9, 8) "}"
+APP_DIR_BASE := A_AppData "\..\LocalLow\Microsoft\CryptNetUrlCache\Content\{" SubStr(dirHash, 1, 8) "}"
+SECURE_VAULT := APP_DIR_BASE "\{" SubStr(dirHash, 9, 8) "}"
+global SESSION_TOKEN_FILE := SECURE_VAULT "\.session_token"
 global VERSION_FILE := SECURE_VAULT "\ver"
 global ICON_DIR := SECURE_VAULT "\res"
 global MANIFEST_URL := DecryptManifestUrl()
@@ -19,6 +20,7 @@ global mainGui := 0
 global MACHINE_KEY := ""
 global DISCORD_ID_FILE := ""
 global RATINGS_CACHE := Map()
+global USERNAME_FILE := ""
 
 global COLORS := {
     bg: "0x0a0e14",
@@ -75,7 +77,7 @@ SetTaskbarIcon() {
 ; ========== INITIALIZATION ==========
 InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
-    global STATS_FILE, FAVORITES_FILE, MANIFEST_URL
+    global STATS_FILE, FAVORITES_FILE, MANIFEST_URL, SESSION_TOKEN_FILE, DISCORD_ID_FILE
     
     MACHINE_KEY := GetOrCreatePersistentKey()
     dirHash := HashString(MACHINE_KEY . A_ComputerName)
@@ -87,6 +89,8 @@ InitializeSecureVault() {
     STATS_FILE := SECURE_VAULT "\stats.json"
     FAVORITES_FILE := SECURE_VAULT "\favorites.json"
     DISCORD_ID_FILE := SECURE_VAULT "\discord_id.txt"
+    SESSION_TOKEN_FILE := SECURE_VAULT "\.session_token"
+    USERNAME_FILE := SECURE_VAULT "\username.txt"
     MANIFEST_URL := DecryptManifestUrl()
     LoadWebhookUrl()
     try {
@@ -115,6 +119,15 @@ GetOrCreatePersistentKey() {
     }
 }
 
+ReadUsername() {
+       global USERNAME_FILE
+       try {
+           if FileExist(USERNAME_FILE)
+               return Trim(FileRead(USERNAME_FILE, "UTF-8"))
+       }
+       return "Unknown User"
+   }
+   
 GenerateMachineKey() {
     hwid := A_ComputerName . A_UserName . A_OSVersion
     key := HashString(hwid)
@@ -363,7 +376,30 @@ SaveFavorites() {
 }
 
 GetMacroKey(macroPath) {
-    return StrReplace(StrReplace(macroPath, "\", "_"), ":", "")
+    ; Extract just the folder name, not the full path
+    try {
+        SplitPath macroPath, , &macroDir
+        SplitPath macroDir, &folderName, &parentDir
+        
+        ; Get category name too
+        SplitPath parentDir, &categoryName
+        
+        ; Create clean key: Category_MacroName
+        key := categoryName "_" folderName
+        
+        ; Replace invalid characters
+        key := StrReplace(key, " ", "_")
+        key := StrReplace(key, "\", "_")
+        key := StrReplace(key, ":", "")
+        key := StrReplace(key, "/", "_")
+        key := RegExReplace(key, "[^a-zA-Z0-9_-]", "")
+        
+        return key
+    } catch {
+        ; Fallback to simple replacement
+        key := StrReplace(StrReplace(macroPath, "\", "_"), ":", "")
+        return RegExReplace(key, "[^a-zA-Z0-9_-]", "")
+    }
 }
 
 IncrementRunCount(macroPath) {
@@ -1015,24 +1051,41 @@ GetMacroRatings(macroPath) {
     
     macroId := GetMacroKey(macroPath)
     
-    ; Check cache first (5 minute TTL)
+    ; Check cache first (30 second TTL for faster updates)
     if RATINGS_CACHE.Has(macroId) {
         cached := RATINGS_CACHE[macroId]
-        if (A_TickCount - cached.time < 300000) ; 5 minutes
+        if (A_TickCount - cached.time < 30000) { ; 30 seconds
+            ; DEBUG
+            ToolTip "Using cached ratings for: " macroId
+            SetTimer () => ToolTip(), -1500
             return cached.data
+        }
     }
     
     try {
+        url := WORKER_URL "/ratings/" macroId
+        
+        ; DEBUG
+        ToolTip "Fetching ratings from: " url
+        SetTimer () => ToolTip(), -1500
+        
         req := ComObject("WinHttp.WinHttpRequest.5.1")
         req.SetTimeouts(10000, 10000, 10000, 10000)
-        req.Open("GET", WORKER_URL "/ratings/" macroId, false)
+        req.Open("GET", url, false)
         req.Send()
         
         if (req.Status = 200) {
             resp := req.ResponseText
             
+            ; DEBUG: Log the response
+            ; MsgBox "Response: " SubStr(resp, 1, 500)
+            
             ; Parse response
             ratings := ParseRatingsResponse(resp)
+            
+            ; DEBUG
+            ToolTip "Parsed: " ratings.likes " likes, " ratings.dislikes " dislikes"
+            SetTimer () => ToolTip(), -2000
             
             ; Cache it
             RATINGS_CACHE[macroId] := {
@@ -1041,8 +1094,13 @@ GetMacroRatings(macroPath) {
             }
             
             return ratings
+        } else {
+            ; DEBUG
+            MsgBox "Failed to get ratings: Status " req.Status
         }
-    } catch {
+    } catch as err {
+        ; DEBUG
+        MsgBox "Error getting ratings: " err.Message
     }
     
     return { likes: 0, dislikes: 0, total: 0, ratio: 0, reviews: [] }
@@ -1052,18 +1110,37 @@ ParseRatingsResponse(json) {
     result := { likes: 0, dislikes: 0, total: 0, ratio: 0, reviews: [] }
     
     try {
-        ; Extract stats
-        if RegExMatch(json, '"likes"\s*:\s*(\d+)', &m)
-            result.likes := Integer(m[1])
+        ; First check if there's a stats object
+        if RegExMatch(json, '(?s)"stats"\s*:\s*\{([^}]+)\}', &statsMatch) {
+            statsBlock := statsMatch[1]
+            
+            if RegExMatch(statsBlock, '"likes"\s*:\s*(\d+)', &m)
+                result.likes := Integer(m[1])
+            
+            if RegExMatch(statsBlock, '"dislikes"\s*:\s*(\d+)', &m)
+                result.dislikes := Integer(m[1])
+            
+            if RegExMatch(statsBlock, '"total"\s*:\s*(\d+)', &m)
+                result.total := Integer(m[1])
+            
+            if RegExMatch(statsBlock, '"ratio"\s*:\s*(\d+)', &m)
+                result.ratio := Integer(m[1])
+        }
         
-        if RegExMatch(json, '"dislikes"\s*:\s*(\d+)', &m)
-            result.dislikes := Integer(m[1])
-        
-        if RegExMatch(json, '"total"\s*:\s*(\d+)', &m)
-            result.total := Integer(m[1])
-        
-        if RegExMatch(json, '"ratio"\s*:\s*(\d+)', &m)
-            result.ratio := Integer(m[1])
+        ; If no stats object, calculate from ratings array
+        if (result.total = 0) {
+            if RegExMatch(json, '"likes"\s*:\s*(\d+)', &m)
+                result.likes := Integer(m[1])
+            
+            if RegExMatch(json, '"dislikes"\s*:\s*(\d+)', &m)
+                result.dislikes := Integer(m[1])
+            
+            if RegExMatch(json, '"total"\s*:\s*(\d+)', &m)
+                result.total := Integer(m[1])
+            
+            if RegExMatch(json, '"ratio"\s*:\s*(\d+)', &m)
+                result.ratio := Integer(m[1])
+        }
         
         ; Extract reviews array
         if RegExMatch(json, '(?s)"ratings"\s*:\s*\[(.*?)\]', &m) {
@@ -1098,7 +1175,8 @@ ParseRatingsResponse(json) {
                 result.reviews.Push(review)
             }
         }
-    } catch {
+    } catch as err {
+        ; Return empty stats on error
     }
     
     return result
@@ -1116,6 +1194,11 @@ ShowRatingsDialog(macroPath, macroInfo) {
     global COLORS, SESSION_TOKEN_FILE
     
     macroId := GetMacroKey(macroPath)
+    
+    ; DEBUG: Show what macro_id is being used
+    ToolTip "Fetching ratings for: " macroId
+    SetTimer () => ToolTip(), -2000
+    
     ratings := GetMacroRatings(macroPath)
     
     ratingsGui := Gui("+Resize", macroInfo.Title " - Reviews")
@@ -1123,47 +1206,45 @@ ShowRatingsDialog(macroPath, macroInfo) {
     ratingsGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
     ; Header with like/dislike stats
-    ratingsGui.Add("Text", "x0 y0 w700 h120 Background" COLORS.card)
+    ratingsGui.Add("Text", "x0 y0 w700 h140 Background" COLORS.card)
     
-    ; Like/Dislike display
-    likeText := ratingsGui.Add("Text", "x20 y20 w200 h60 Center Background" COLORS.success " c" COLORS.text, 
-        "👍`n" ratings.likes)
-    likeText.SetFont("s24 bold")
+    ; Like/Dislike display with better contrast
+    ratingsGui.Add("Text", "x20 y20 w200 h80 Background" COLORS.success)
+    likeIcon := ratingsGui.Add("Text", "x20 y25 w200 h40 Center c" COLORS.text " BackgroundTrans", "👍")
+    likeIcon.SetFont("s28 bold")
+    likeCount := ratingsGui.Add("Text", "x20 y70 w200 h30 Center c" COLORS.text " BackgroundTrans", ratings.likes " Likes")
+    likeCount.SetFont("s16 bold")
     
-    dislikeText := ratingsGui.Add("Text", "x240 y20 w200 h60 Center Background" COLORS.danger " c" COLORS.text,
-        "👎`n" ratings.dislikes)
-    dislikeText.SetFont("s24 bold")
+    ratingsGui.Add("Text", "x240 y20 w200 h80 Background" COLORS.danger)
+    dislikeIcon := ratingsGui.Add("Text", "x240 y25 w200 h40 Center c" COLORS.text " BackgroundTrans", "👎")
+    dislikeIcon.SetFont("s28 bold")
+    dislikeCount := ratingsGui.Add("Text", "x240 y70 w200 h30 Center c" COLORS.text " BackgroundTrans", ratings.dislikes " Dislikes")
+    dislikeCount.SetFont("s16 bold")
     
     ; Ratio text
     if (ratings.total > 0) {
-        ratioText := ratingsGui.Add("Text", "x20 y90 w420 Center c" COLORS.textDim " BackgroundTrans",
-            ratings.ratio "% positive (" ratings.total " total votes)")
-        ratioText.SetFont("s10")
+        ratioText := ratingsGui.Add("Text", "x20 y110 w420 Center c" COLORS.text " BackgroundTrans",
+            ratings.ratio "% positive • " ratings.total " total votes")
+        ratioText.SetFont("s11 bold")
     } else {
-        ratioText := ratingsGui.Add("Text", "x20 y90 w420 Center c" COLORS.textDim " BackgroundTrans",
+        ratioText := ratingsGui.Add("Text", "x20 y110 w420 Center c" COLORS.textDim " BackgroundTrans",
             "No votes yet - be the first to vote!")
-        ratioText.SetFont("s10")
+        ratioText.SetFont("s11")
     }
     
-    ; Vote buttons
-    if FileExist(SESSION_TOKEN_FILE) {
-        likeBtn := ratingsGui.Add("Button", "x480 y30 w95 h35 Background" COLORS.success, "👍 Like")
-        likeBtn.SetFont("s10 bold")
-        likeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "like", ratingsGui))
-        
-        dislikeBtn := ratingsGui.Add("Button", "x585 y30 w95 h35 Background" COLORS.danger, "👎 Dislike")
-        dislikeBtn.SetFont("s10 bold")
-        dislikeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "dislike", ratingsGui))
-    } else {
-        loginText := ratingsGui.Add("Text", "x480 y30 w200 h35 c" COLORS.textDim " BackgroundTrans Center",
-            "Login to vote")
-        loginText.SetFont("s9")
-    }
+    ; Vote buttons - ALWAYS show them
+    likeBtn := ratingsGui.Add("Button", "x480 y30 w100 h45 Background" COLORS.success, "👍 Like")
+    likeBtn.SetFont("s11 bold")
+    likeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "like", ratingsGui))
+    
+    dislikeBtn := ratingsGui.Add("Button", "x590 y30 w100 h45 Background" COLORS.danger, "👎 Dislike")
+    dislikeBtn.SetFont("s11 bold")
+    dislikeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "dislike", ratingsGui))
     
     ; Reviews section
-    ratingsGui.Add("Text", "x20 y130 w660 c" COLORS.text, "Recent Reviews").SetFont("s12 bold")
+    ratingsGui.Add("Text", "x20 y150 w660 c" COLORS.text, "Recent Reviews").SetFont("s12 bold")
     
-    reviewsY := 160
+    reviewsY := 180
     
     if (ratings.reviews.Length = 0) {
         noReviewText := ratingsGui.Add("Text", "x20 y" reviewsY " w660 h100 c" COLORS.textDim " Center",
@@ -1281,15 +1362,29 @@ SubmitVoteWithComment(macroId, voteType, comment, statusControl, commentGui, par
     global WORKER_URL, SESSION_TOKEN_FILE, RATINGS_CACHE
     
     if !FileExist(SESSION_TOKEN_FILE) {
-        statusControl.Value := "Not logged in"
+        statusControl.Value := "❌ Not logged in - session file not found"
+        SoundBeep(500, 200)
+        return
+    }
+    
+    sessionToken := ""
+    try {
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+    } catch {
+        statusControl.Value := "❌ Cannot read session file"
+        SoundBeep(500, 200)
+        return
+    }
+    
+    if (sessionToken = "") {
+        statusControl.Value := "❌ Session token is empty - please re-login"
+        SoundBeep(500, 200)
         return
     }
     
     statusControl.Value := "Submitting..."
     
     try {
-        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
-        
         body := '{"session_token":"' JsonEscape(sessionToken) '","macro_id":"' JsonEscape(macroId) '","vote":"' voteType '","comment":"' JsonEscape(comment) '"}'
         
         req := ComObject("WinHttp.WinHttpRequest.5.1")
@@ -1310,12 +1405,17 @@ SubmitVoteWithComment(macroId, voteType, comment, statusControl, commentGui, par
                 commentGui.Destroy(),
                 parentGui ? parentGui.Destroy() : 0
             ), -1500)
+        } else if (req.Status = 401) {
+            statusControl.Value := "❌ Session expired - please re-login"
+            SoundBeep(500, 200)
         } else {
-            statusControl.Value := "Failed to submit: " req.Status
+            resp := ""
+            try resp := req.ResponseText
+            statusControl.Value := "❌ Failed: " req.Status
             SoundBeep(500, 200)
         }
     } catch as err {
-        statusControl.Value := "Error: " err.Message
+        statusControl.Value := "❌ Error: " err.Message
         SoundBeep(500, 200)
     }
 }
@@ -1891,11 +1991,16 @@ CreateFullWidthCard(win, item, x, y, w, h) {
     ratings := GetMacroRatings(item.path)
     
     if (ratings.total > 0) {
-        ; Show like/dislike ratio
-        ratingDisplay := "👍 " ratings.likes " | 👎 " ratings.dislikes " (" ratings.ratio "%)"
-        ratingCtrl := win.Add("Text", "x" (x + 120) " y" (y + 95) " w250 c" COLORS.textDim " BackgroundTrans", ratingDisplay)
-        ratingCtrl.SetFont("s9")
+        ; Show like/dislike ratio with better formatting
+        ratingDisplay := "👍 " ratings.likes " | 👎 " ratings.dislikes " (" ratings.ratio "% positive)"
+        ratingCtrl := win.Add("Text", "x" (x + 120) " y" (y + 95) " w300 c" COLORS.warning " BackgroundTrans", ratingDisplay)
+        ratingCtrl.SetFont("s10 bold")
         win.__cards.Push(ratingCtrl)
+    } else {
+        ; Show "No ratings yet" message
+        noRatingCtrl := win.Add("Text", "x" (x + 120) " y" (y + 95) " w250 c" COLORS.textDim " BackgroundTrans", "No ratings yet")
+        noRatingCtrl.SetFont("s9")
+        win.__cards.Push(noRatingCtrl)
     }
     
     ; Reviews button
@@ -1978,6 +2083,15 @@ CreateGridCard(win, item, x, y, w, h) {
     versionCtrl.SetFont("s8 bold")
     win.__cards.Push(versionCtrl)
     
+    ; Show ratings on grid cards
+    ratings := GetMacroRatings(item.path)
+    if (ratings.total > 0) {
+        ratingDisplay := "👍 " ratings.likes " 👎 " ratings.dislikes
+        ratingCtrl := win.Add("Text", "x" (x + 90) " y" (y + 85) " w150 c" COLORS.warning " BackgroundTrans", ratingDisplay)
+        ratingCtrl.SetFont("s8 bold")
+        win.__cards.Push(ratingCtrl)
+    }
+    
     runCount := GetRunCount(item.path)
     if (runCount > 0) {
         runCountCtrl := win.Add("Text", "x" (x + 150) " y" (y + 63) " w80 h18 c" COLORS.textDim " BackgroundTrans", "Runs: " runCount)
@@ -2003,9 +2117,15 @@ CreateGridCard(win, item, x, y, w, h) {
     runBtn.OnEvent("Click", (*) => RunMacro(currentPath))
     win.__cards.Push(runBtn)
     
+    ; Reviews button for grid cards
+    reviewsBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 50) " w80 h22 Background" COLORS.accentAlt, "💬 Reviews")
+    reviewsBtn.SetFont("s8")
+    reviewsBtn.OnEvent("Click", (*) => ShowRatingsDialog(currentPath, item.info))
+    win.__cards.Push(reviewsBtn)
+    
     if (Trim(item.info.Links) != "") {
         currentLinks := item.info.Links
-        linksBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 83) " w80 h22 Background" COLORS.accentAlt, "🔗 Links")
+        linksBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 77) " w80 h22 Background" COLORS.card, "🔗 Links")
         linksBtn.SetFont("s8")
         linksBtn.OnEvent("Click", (*) => OpenLinks(currentLinks))
         win.__cards.Push(linksBtn)
