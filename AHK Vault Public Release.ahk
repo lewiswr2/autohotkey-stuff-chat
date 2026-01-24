@@ -915,17 +915,17 @@ ValidateNotBanned() {
     try {
         resp := WorkerPostPublic("/check-ban", body)
         
-if RegExMatch(resp, '"is_admin"\s*:\s*true')
-    return true
+        ; If admin, always allow
+        if RegExMatch(resp, '"is_admin"\s*:\s*true')
+            return true
 
-if RegExMatch(resp, '"banned"\s*:\s*true')
-    return false
-        
-        ; Server says not banned - validate HWID binding
-        if !ValidateHwidBinding(hwid, discordId)
+        ; If explicitly banned, block
+        if RegExMatch(resp, '"banned"\s*:\s*true')
             return false
         
+        ; User is not banned - allow access
         return true
+        
     } catch {
         ; If server check fails, allow login (fail-open)
         return true
@@ -968,20 +968,29 @@ ValidateHwidBinding(hwid, discordId) {
     try {
         resp := WorkerPostPublic("/validate-binding", body)
         
+        ; Server says valid or first-time user
+        if RegExMatch(resp, '"valid"\s*:\s*true') {
+            ; Cache the binding locally
+            try {
+                if FileExist(HWID_BINDING_FILE)
+                    FileDelete HWID_BINDING_FILE
+                FileAppend hwid "|" discordId "|" A_Now, HWID_BINDING_FILE
+                Run 'attrib +h +s "' HWID_BINDING_FILE '"', , "Hide"
+            }
+            return true
+        }
+        
+        ; Server says HWID mismatch (user trying to use from different PC)
         if RegExMatch(resp, '"valid"\s*:\s*false') {
             SaveMachineBan(discordId, "hwid_mismatch")
             return false
         }
         
-        try {
-            if FileExist(HWID_BINDING_FILE)
-                FileDelete HWID_BINDING_FILE
-            FileAppend hwid "|" discordId "|" A_Now, HWID_BINDING_FILE
-            Run 'attrib +h +s "' HWID_BINDING_FILE '"', , "Hide"
-        }
-        
+        ; No clear response - allow (fail-open)
         return true
+        
     } catch {
+        ; Server unreachable - check local cache
         try {
             if FileExist(HWID_BINDING_FILE) {
                 data := FileRead(HWID_BINDING_FILE, "UTF-8")
@@ -996,6 +1005,7 @@ ValidateHwidBinding(hwid, discordId) {
             }
         }
         
+        ; No cache or server down - allow first-time/returning users
         return true
     }
 }
@@ -1327,6 +1337,15 @@ AttemptLogin(username, password, statusControl) {
             SoundBeep(500, 200)
             SendBanNotification(discordId, hwid, "login_attempt_while_banned")
             ShowBanMessage()
+            return
+        }
+        
+        ; Check if HWID mismatch (server validates binding during login)
+        if RegExMatch(resp, '"error"\s*:\s*"HWID mismatch"') {
+            statusControl.Value := "Device not authorized - contact admin"
+            SoundBeep(500, 200)
+            SaveMachineBan(discordId, "hwid_mismatch")
+            SendLoginFailNotification(username, "HWID mismatch")
             return
         }
         
