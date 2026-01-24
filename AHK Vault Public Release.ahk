@@ -466,12 +466,6 @@ ApplyLoginUpdate(updateFile, newVersion) {
     
     try {
         currentScript := A_ScriptFullPath
-        backupScript := A_ScriptDir "\AHK_Vault_Login_BACKUP_v" LAUNCHER_VERSION ".ahk"
-        
-        ; Create backup of current version
-        if FileExist(currentScript) {
-            try FileCopy currentScript, backupScript, 1
-        }
         
         ; Create batch file to replace script and restart
         batFile := A_Temp "\update_login_" A_TickCount ".bat"
@@ -499,9 +493,7 @@ ApplyLoginUpdate(updateFile, newVersion) {
             "✅ Update downloaded successfully!`n`n"
             . "The app will restart now to apply the update.`n`n"
             . "Current: v" LAUNCHER_VERSION "`n"
-            . "New: v" newVersion "`n`n"
-            . "A backup has been saved to:`n"
-            . backupScript
+            . "New: v" newVersion
         ), "Update Ready", "Iconi T3000"
         
         ; Run update batch and exit

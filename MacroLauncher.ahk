@@ -127,7 +127,7 @@ ReadUsername() {
        }
        return "Unknown User"
    }
-   
+
 GenerateMachineKey() {
     hwid := A_ComputerName . A_UserName . A_OSVersion
     key := HashString(hwid)
@@ -1055,19 +1055,12 @@ GetMacroRatings(macroPath) {
     if RATINGS_CACHE.Has(macroId) {
         cached := RATINGS_CACHE[macroId]
         if (A_TickCount - cached.time < 30000) { ; 30 seconds
-            ; DEBUG
-            ToolTip "Using cached ratings for: " macroId
-            SetTimer () => ToolTip(), -1500
             return cached.data
         }
     }
     
     try {
         url := WORKER_URL "/ratings/" macroId
-        
-        ; DEBUG
-        ToolTip "Fetching ratings from: " url
-        SetTimer () => ToolTip(), -1500
         
         req := ComObject("WinHttp.WinHttpRequest.5.1")
         req.SetTimeouts(10000, 10000, 10000, 10000)
@@ -1076,16 +1069,8 @@ GetMacroRatings(macroPath) {
         
         if (req.Status = 200) {
             resp := req.ResponseText
-            
-            ; DEBUG: Log the response
-            ; MsgBox "Response: " SubStr(resp, 1, 500)
-            
-            ; Parse response
+
             ratings := ParseRatingsResponse(resp)
-            
-            ; DEBUG
-            ToolTip "Parsed: " ratings.likes " likes, " ratings.dislikes " dislikes"
-            SetTimer () => ToolTip(), -2000
             
             ; Cache it
             RATINGS_CACHE[macroId] := {
@@ -2855,10 +2840,8 @@ RunUtilityButton(path, name) {
         
         Run '"' A_AhkPath '" "' path '"', dir
         
-        SetTimer () => ToolTip(), -1500
     } catch as err {
-        ToolTip
-        MsgBox "Failed to run utility: " err.Message "`n`nPath: " path "`n`nWorking Dir: " dir, "Error", "Icon!"
+
     }
 }
 
