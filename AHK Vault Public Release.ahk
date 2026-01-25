@@ -23,7 +23,7 @@ global HWID_BAN_FILE := ""
 global MACHINE_BAN_FILE := ""
 global HWID_BINDING_FILE := ""
 global USERNAME_FILE := ""
-global ACCESS_KEY_FILE := ""
+global ACCESS_KEY_FILE := ""  ; Will be set in InitializeSecureVault()
 
 ; Login Settings
 global MAX_ATTEMPTS := 10
@@ -72,7 +72,7 @@ InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
     global DISCORD_ID_FILE, DISCORD_BAN_FILE, ADMIN_DISCORD_FILE
     global HWID_BINDING_FILE, HWID_BAN_FILE, MACHINE_BAN_FILE
-    global MANIFEST_URL, MACRO_LAUNCHER_PATH, SESSION_TOKEN_FILE, USERNAME_FILE
+    global MANIFEST_URL, MACRO_LAUNCHER_PATH, SESSION_TOKEN_FILE, USERNAME_FILE, ACCESS_KEY_FILE
     
     MACHINE_KEY := GetOrCreatePersistentKey()
     
@@ -84,17 +84,17 @@ InitializeSecureVault() {
     VERSION_FILE := SECURE_VAULT "\~ver.tmp"
     MANIFEST_URL := DecryptManifestUrl()
     
-    ; Set file paths
+    ; Set file paths - ALL IN SECURE_VAULT
     MACRO_LAUNCHER_PATH := SECURE_VAULT "\MacroLauncher.ahk"
     SESSION_TOKEN_FILE := SECURE_VAULT "\.session_token"
     DISCORD_ID_FILE := SECURE_VAULT "\discord_id.txt"
     USERNAME_FILE := SECURE_VAULT "\username.txt"
+    ACCESS_KEY_FILE := SECURE_VAULT "\.access_key"  ; ✅ NOW IN SECURE_VAULT
     DISCORD_BAN_FILE := SECURE_VAULT "\banned_discord_ids.txt"
     ADMIN_DISCORD_FILE := SECURE_VAULT "\admin_discord_ids.txt"
     HWID_BAN_FILE := SECURE_VAULT "\banned_hwids.txt"
     MACHINE_BAN_FILE := SECURE_VAULT "\.machine_banned"
     HWID_BINDING_FILE := SECURE_VAULT "\.hwid_bind"
-    ACCESS_KEY_FILE := SECURE_VAULT "\.access_key"
 
     ; ========== IMPROVED: Create all directories with better error handling ==========
     try {
@@ -177,17 +177,22 @@ VerifyGlobalKeyQuiet(key) {
 CheckGlobalKey() {
     global WORKER_URL, COLORS, ACCESS_KEY_FILE
     
-    ; Check if key is already saved
+    ; Check if key is already saved and valid
     if FileExist(ACCESS_KEY_FILE) {
         try {
             savedKey := Trim(FileRead(ACCESS_KEY_FILE, "UTF-8"))
             if (savedKey != "") {
                 ; Verify the saved key is still valid
                 if VerifyGlobalKeyQuiet(savedKey) {
-                    return true
+                    return true  ; ✅ KEY IS VALID, NO NEED TO PROMPT
                 } else {
                     ; Saved key is invalid, delete it
-                    try FileDelete ACCESS_KEY_FILE
+                    try {
+                        FileSetAttrib "-H -S -R", ACCESS_KEY_FILE
+                        FileDelete ACCESS_KEY_FILE
+                    } catch {
+                        ; Ignore deletion errors
+                    }
                 }
             }
         } catch {
@@ -195,6 +200,7 @@ CheckGlobalKey() {
         }
     }
     
+    ; If we get here, we need to prompt for key
     keyGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Access Key")
     keyGui.BackColor := COLORS.bg
     keyGui.SetFont("s10 c" COLORS.text, "Segoe UI")
@@ -202,16 +208,22 @@ CheckGlobalKey() {
     keyGui.Add("Text", "x0 y0 w500 h80 Background" COLORS.accent)
     keyGui.Add("Text", "x20 y20 w460 h30 c" COLORS.text " BackgroundTrans", "🔑 Enter Access Key").SetFont("s16 bold")
     
-    keyGui.Add("Text", "x25 y100 w450 h200 Background" COLORS.card)
+    keyGui.Add("Text", "x25 y100 w450 h230 Background" COLORS.card)
     
     keyGui.Add("Text", "x45 y120 w410 c" COLORS.text " BackgroundTrans", 
-        "This application requires an access key.`n`nPlease enter the key to continue:")
+        "This application requires an access key.")
     
-    keyEdit := keyGui.Add("Edit", "x45 y180 w410 h30 Password Background" COLORS.bgLight " c" COLORS.text)
+    keyGui.Add("Text", "x45 y150 w410 c" COLORS.text " BackgroundTrans", 
+        "Please enter the key to continue:")
     
-    statusText := keyGui.Add("Text", "x45 y220 w410 Center c" COLORS.danger " BackgroundTrans", "")
+    keyGui.Add("Text", "x45 y180 w410 c" COLORS.textDim " BackgroundTrans", 
+        "(You only need to do this once)")
     
-    continueBtn := keyGui.Add("Button", "x165 y320 w170 h40 Background" COLORS.success, "Continue")
+    keyEdit := keyGui.Add("Edit", "x45 y215 w410 h30 Password Background" COLORS.bgLight " c" COLORS.text)
+    
+    statusText := keyGui.Add("Text", "x45 y255 w410 Center c" COLORS.danger " BackgroundTrans", "")
+    
+    continueBtn := keyGui.Add("Button", "x165 y350 w170 h40 Background" COLORS.success, "Continue")
     continueBtn.SetFont("s11 bold")
     
     keyValid := false
@@ -220,7 +232,7 @@ CheckGlobalKey() {
     
     keyGui.OnEvent("Close", (*) => (keyValid := false, keyGui.Destroy()))
     
-    keyGui.Show("w500 h380 Center")
+    keyGui.Show("w500 h410 Center")
     WinWaitClose(keyGui.Hwnd)
     
     return keyValid
@@ -260,7 +272,7 @@ VerifyGlobalKey(key, statusControl) {
         if (req.Status = 200) {
             resp := req.ResponseText
             if RegExMatch(resp, '"valid"\s*:\s*true') {
-                ; Save the valid key
+                ; ✅ SAVE THE VALID KEY PERMANENTLY
                 try {
                     ; Ensure directory exists
                     if !DirExist(SECURE_VAULT) {
@@ -277,17 +289,25 @@ VerifyGlobalKey(key, statusControl) {
                         }
                     }
                     
-                    ; Save the key
-                    FileAppend key, ACCESS_KEY_FILE, "UTF-8"
+                    ; ✅ FIX: Correct AHK v2 syntax - encoding is an option object
+                    FileAppend key, ACCESS_KEY_FILE
+                    
+                    ; Verify it was saved
+                    if !FileExist(ACCESS_KEY_FILE) {
+                        statusControl.Value := "⚠️ Key accepted but failed to save (you'll need to re-enter next time)"
+                        Sleep 2000
+                    }
                     
                     ; Hide the file
                     try {
-                        Run 'attrib +h +s "' ACCESS_KEY_FILE '"', , "Hide"
+                        RunWait 'attrib +h +s "' ACCESS_KEY_FILE '"', , "Hide"
                     } catch {
                         ; Ignore attribute errors
                     }
-                } catch {
+                } catch as err {
                     ; Failed to save key, but still allow access
+                    statusControl.Value := "⚠️ Key accepted but failed to save: " err.Message
+                    Sleep 2000
                 }
                 
                 return true
@@ -300,7 +320,7 @@ VerifyGlobalKey(key, statusControl) {
         
     } catch as err {
         ToolTip
-        statusControl.Value := "❌ Connection error"
+        statusControl.Value := "❌ Connection error: " err.Message
         SoundBeep(500, 200)
         return false
     }
@@ -807,6 +827,11 @@ SaveUsername(username) {
             DirCreate SECURE_VAULT
         }
         
+        ; ✅ FIX: Ensure USERNAME_FILE has a valid path
+        if (USERNAME_FILE = "" || !InStr(USERNAME_FILE, "\")) {
+            USERNAME_FILE := SECURE_VAULT "\username.txt"
+        }
+        
         ; Delete old username file if exists
         if FileExist(USERNAME_FILE) {
             try {
@@ -818,7 +843,7 @@ SaveUsername(username) {
         }
         
         ; Save username
-        FileAppend username, USERNAME_FILE, "UTF-8"
+        FileAppend username, USERNAME_FILE
         
         ; Hide the file (non-critical)
         try {

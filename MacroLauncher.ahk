@@ -1337,11 +1337,12 @@ ShowFullProfile() {
         CreateStatCard(profileGui, 240, yPos, "⭐ Favorites", String(stats.favorites_count))
         CreateStatCard(profileGui, 450, yPos, "📝 Comments", String(stats.reviews_with_comments))
         
+        yPos += 100  ; Add height increment after the stat cards
+        
     } catch {
-        profileGui.Add("Text", "x30 y" yPos " w640 c" COLORS.textDim, "Failed to load statistics")
+        profileGui.Add("Text", "x30 y" yPos " w640 h500 c" COLORS.textDim, "Failed to load statistics")
+        yPos += 30  ; Add height for error message
     }
-    
-    yPos += 120
     
     ; Edit Profile button
     editBtn := profileGui.Add("Button", "x30 y" yPos " w200 h40 Background" COLORS.accentAlt, "✏️ Edit Profile")
@@ -1983,7 +1984,7 @@ ParseManifest(json) {
 ; ========== MAIN GUI ==========
 
 CreateMainGui() {
-    global mainGui, COLORS, BASE_DIR, ICON_DIR
+    global mainGui, COLORS, BASE_DIR, ICON_DIR, USER_PROFILE, SECURE_VAULT
     
     mainGui := Gui("-Resize +Border", " AHK Vault")
     mainGui.BackColor := COLORS.bg
@@ -2009,36 +2010,63 @@ CreateMainGui() {
         }
     }
     
-    titleText := mainGui.Add("Text", "x85 y17 w280 h100 c" COLORS.text " BackgroundTrans", " AHK Vault")
+    titleText := mainGui.Add("Text", "x85 y17 w180 h100 c" COLORS.text " BackgroundTrans", " AHK Vault")
     titleText.SetFont("s24 bold")
 
-    ; Header buttons
-    btnNuke := mainGui.Add("Button", "x290 y2 w75 h35 Background" COLORS.danger, "Uninstall")
+    ; Header buttons - Left side (Uninstall, Update, Changelog)
+    btnNuke := mainGui.Add("Button", "x270 y10 w75 h28 Background" COLORS.danger, "Uninstall")
     btnNuke.SetFont("s9")
     btnNuke.OnEvent("Click", CompleteUninstall)
 
-    btnUpdate := mainGui.Add("Button", "x370 y2 w75 h35 Background" COLORS.accentHover, "Update")
-    btnUpdate.SetFont("s10")
+    btnUpdate := mainGui.Add("Button", "x270 y42 w75 h28 Background" COLORS.accentHover, "Update")
+    btnUpdate.SetFont("s9")
     btnUpdate.OnEvent("Click", ManualUpdate)
     
-    btnLog := mainGui.Add("Button", "x450 y2 w75 h35 Background" COLORS.accentAlt, "Changelog")
-    btnLog.SetFont("s10")
+    btnLog := mainGui.Add("Button", "x350 y10 w75 h28 Background" COLORS.accentAlt, "Changelog")
+    btnLog.SetFont("s9")
     btnLog.OnEvent("Click", ShowChangelog)
     
-    btnProfile := mainGui.Add("Button", "x370 y40 w75 h35 Background" COLORS.accentAlt, "👤 Profile")
-btnProfile.SetFont("s9")
-btnProfile.OnEvent("Click", (*) => ShowProfileEditor())
+    ; Logout button
+    btnLogout := mainGui.Add("Button", "x350 y42 w75 h28 Background" COLORS.warning, "Log Out")
+    btnLogout.SetFont("s9")
+    btnLogout.OnEvent("Click", (*) => LogoutUser())
+    
+    ; Profile Picture Circle (Top Right)
+    profilePicPath := SECURE_VAULT "\profile_picture.png"
+    hasProfilePic := false
+    
+    ; Check if profile picture exists
+    if FileExist(profilePicPath) {
+        try {
+            ; Use Picture control for actual image
+            picCtrl := mainGui.Add("Picture", "x475 y10 w60 h60 BackgroundTrans Border", profilePicPath)
+            picCtrl.OnEvent("Click", (*) => ShowProfileDropdown())
+            hasProfilePic := true
+        } catch {
+            ; Fall back to button with initial
+        }
+    }
+    
+    ; If no picture, show button with initial letter
+    if (!hasProfilePic) {
+        username := ReadUsername()
+        initial := SubStr(username, 1, 1)
+        
+        profilePicBtn := mainGui.Add("Button", "x475 y10 w60 h60 Background" COLORS.card " Border", initial)
+        profilePicBtn.SetFont("s24 bold c" COLORS.text)
+        profilePicBtn.OnEvent("Click", (*) => ShowProfileDropdown())
+    }
 
     ; NEW: Add menu bar for enhanced features
-try {
-    menuBar := Menu()
-    menuBar.Add("👤 Edit Profile", (*) => ShowProfileEditor())
-    menuBar.Add("📊 My History", (*) => ShowUserHistory())
-    menuBar.Add("🏆 Popular Macros", (*) => ShowPopularMacros())
-    mainGui.MenuBar := menuBar
-} catch {
-    ; Silent fail if menu creation fails
-}
+    try {
+        menuBar := Menu()
+        menuBar.Add("👤 Edit Profile", (*) => ShowProfileEditor())
+        menuBar.Add("📊 My History", (*) => ShowUserHistory())
+        menuBar.Add("🏆 Popular Macros", (*) => ShowPopularMacros())
+        mainGui.MenuBar := menuBar
+    } catch {
+        ; Silent fail if menu creation fails
+    }
 
     mainGui.Add("Text", "x25 y100 w500 c" COLORS.text, "Utilities").SetFont("s12 bold")
     mainGui.Add("Text", "x25 y125 w500 h1 Background" COLORS.border)
@@ -2082,6 +2110,199 @@ try {
     }
     
     mainGui.Show("w550 h" (yPos + 20) " Center")
+}
+
+ShowProfileEditor() {
+    global WORKER_URL, SESSION_TOKEN_FILE, DISCORD_ID_FILE, COLORS, USER_PROFILE, SECURE_VAULT
+    
+    discordId := ReadDiscordId()
+    if (discordId = "" || discordId = "Unknown") {
+        MsgBox "Discord ID not found!", "Error"
+        return
+    }
+    
+    LoadUserProfile()
+    
+    profileGui := Gui(, "Edit Profile")
+    profileGui.BackColor := COLORS.bg
+    profileGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    profileGui.Add("Text", "x0 y0 w500 h60 Background" COLORS.accent)
+    profileGui.Add("Text", "x20 y15 w460 h30 c" COLORS.text " BackgroundTrans", "👤 Your Profile").SetFont("s16 bold")
+    
+    profileGui.Add("Text", "x20 y80 w460 c" COLORS.text, "Username:")
+    currentUsername := USER_PROFILE.Has("username") ? USER_PROFILE["username"] : ReadUsername()
+    usernameEdit := profileGui.Add("Edit", "x20 y105 w460 h30 Background" COLORS.card " c" COLORS.text, currentUsername)
+    
+    profileGui.Add("Text", "x20 y150 w460 c" COLORS.text, "Bio (max 500 characters):")
+    currentBio := USER_PROFILE.Has("bio") ? USER_PROFILE["bio"] : ""
+    bioEdit := profileGui.Add("Edit", "x20 y175 w460 h100 Multi Background" COLORS.card " c" COLORS.text, currentBio)
+    
+    profileGui.Add("Text", "x20 y290 w460 c" COLORS.text, "Profile Picture:")
+    
+    ; Show current profile picture if it exists
+    localPicPath := SECURE_VAULT "\profile_picture.png"
+    if FileExist(localPicPath) {
+        try {
+            profileGui.Add("Picture", "x20 y315 w80 h80 BackgroundTrans Border", localPicPath)
+            profileGui.Add("Text", "x110 y330 w370 c" COLORS.success, "✅ Profile picture set")
+        } catch {
+            profileGui.Add("Text", "x20 y315 w460 c" COLORS.textDim, "No profile picture set")
+        }
+    } else {
+        profileGui.Add("Text", "x20 y315 w460 c" COLORS.textDim, "No profile picture set")
+    }
+    
+    uploadBtn := profileGui.Add("Button", "x20 y405 w200 h35 Background" COLORS.accentAlt, "📷 Choose Picture")
+    uploadBtn.SetFont("s10")
+    uploadBtn.OnEvent("Click", (*) => ChooseProfilePicture())
+    
+    profileGui.Add("Text", "x20 y455 w460 c" COLORS.textDim, "Statistics:")
+    totalMacros := USER_PROFILE.Has("total_macros") ? USER_PROFILE["total_macros"] : "0"
+    profileGui.Add("Text", "x20 y480 w460 c" COLORS.text, "Total Macros Run: " totalMacros)
+    
+    saveBtn := profileGui.Add("Button", "x20 y520 w220 h40 Background" COLORS.success, "💾 Save Changes")
+    saveBtn.SetFont("s11 bold")
+    cancelBtn := profileGui.Add("Button", "x260 y520 w220 h40 Background" COLORS.danger, "❌ Cancel")
+    cancelBtn.SetFont("s11 bold")
+    
+    saveBtn.OnEvent("Click", (*) => SaveProfile())
+    cancelBtn.OnEvent("Click", (*) => profileGui.Destroy())
+    
+    profileGui.Show("w500 h580")
+    
+    SaveProfile() {
+        username := usernameEdit.Value
+        bio := bioEdit.Value
+        
+        if (username = "") {
+            MsgBox "Username cannot be empty!", "Error"
+            return
+        }
+        
+        if !FileExist(SESSION_TOKEN_FILE) {
+            MsgBox "Not logged in!", "Error"
+            return
+        }
+        
+        try {
+            sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+            
+            body := '{"session_token":"' JsonEscape(sessionToken) '",'
+                  . '"username":"' JsonEscape(username) '",'
+                  . '"bio":"' JsonEscape(bio) '"}'
+            
+            ToolTip "Saving profile..."
+            
+            req := ComObject("WinHttp.WinHttpRequest.5.1")
+            req.SetTimeouts(10000, 10000, 10000, 10000)
+            req.Open("POST", WORKER_URL "/profile/update", false)
+            req.SetRequestHeader("Content-Type", "application/json")
+            req.Send(body)
+            
+            ToolTip
+            
+            if (req.Status = 200) {
+                MsgBox "✅ Profile updated successfully!", "Success", "Iconi T2"
+                LoadUserProfile()
+                profileGui.Destroy()
+            } else {
+                MsgBox "Failed to update profile: " req.Status, "Error"
+            }
+        } catch as err {
+            ToolTip
+            MsgBox "Error: " err.Message, "Error"
+        }
+    }
+    
+    ChooseProfilePicture() {
+        selectedFile := FileSelect(, , "Select Profile Picture", "Images (*.png; *.jpg; *.jpeg; *.gif)")
+        if (selectedFile = "")
+            return
+        
+        fileSize := 0
+        Loop Files, selectedFile
+            fileSize := A_LoopFileSize
+        
+        if (fileSize > 500000) {
+            MsgBox "Image too large! Please use an image under 500KB.", "Error"
+            return
+        }
+        
+        UploadProfilePicture(selectedFile)
+    }
+}
+
+UploadProfilePicture(imagePath) {
+    global WORKER_URL, SESSION_TOKEN_FILE, SECURE_VAULT
+    
+    if !FileExist(imagePath) {
+        MsgBox "Image file not found!", "Error"
+        return false
+    }
+    
+    if !FileExist(SESSION_TOKEN_FILE) {
+        MsgBox "Not logged in!", "Error"
+        return false
+    }
+    
+    try {
+        ; Save profile picture locally FIRST
+        localPicPath := SECURE_VAULT "\profile_picture.png"
+        
+        ToolTip "Saving profile picture locally..."
+        
+        ; Copy the selected image to local storage
+        try {
+            FileCopy imagePath, localPicPath, 1
+        } catch as err {
+            ToolTip
+            MsgBox "Failed to save picture locally: " err.Message, "Error"
+            return false
+        }
+        
+        ; Now upload to server
+        ToolTip "Converting image to base64..."
+        base64 := FileToBase64(imagePath)
+        ToolTip
+        
+        if (StrLen(base64) > 700000) {
+            MsgBox "Image too large! Please use a smaller image (max ~500KB)", "Error"
+            return false
+        }
+        
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+        
+        SplitPath imagePath, , , &ext
+        mimeType := "image/" (ext = "jpg" ? "jpeg" : ext)
+        
+        body := '{"session_token":"' JsonEscape(sessionToken) '",'
+              . '"image_data":"data:' mimeType ';base64,' base64 '"}'
+        
+        ToolTip "Uploading profile picture to server..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(30000, 30000, 30000, 30000)
+        req.Open("POST", WORKER_URL "/profile/picture", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        ToolTip
+        
+        if (req.Status = 200) {
+            MsgBox "✅ Profile picture uploaded successfully!`n`nRestart the launcher to see changes.", "Success", "Iconi T2"
+            return true
+        } else {
+            resp := req.ResponseText
+            MsgBox "Failed to upload to server: " resp "`n`nBut picture was saved locally!", "Partial Success", "Icon!"
+            return true  ; Still return true since local save worked
+        }
+    } catch as err {
+        ToolTip
+        MsgBox "Error uploading picture: " err.Message, "Error"
+    }
+    
+    return false
 }
 
 GetCategories() {
@@ -3371,176 +3592,6 @@ LoadUserProfile() {
         }
     } catch {
         return false
-    }
-    
-    return false
-}
-
-ShowProfileEditor() {
-    global WORKER_URL, SESSION_TOKEN_FILE, DISCORD_ID_FILE, COLORS, USER_PROFILE
-    
-    discordId := ReadDiscordId()
-    if (discordId = "" || discordId = "Unknown") {
-        MsgBox "Discord ID not found!", "Error"
-        return
-    }
-    
-    LoadUserProfile()
-    
-    profileGui := Gui(, "Edit Profile")
-    profileGui.BackColor := COLORS.bg
-    profileGui.SetFont("s10 c" COLORS.text, "Segoe UI")
-    
-    profileGui.Add("Text", "x0 y0 w500 h60 Background" COLORS.accent)
-    profileGui.Add("Text", "x20 y15 w460 h30 c" COLORS.text " BackgroundTrans", "👤 Your Profile").SetFont("s16 bold")
-    
-    profileGui.Add("Text", "x20 y80 w460 c" COLORS.text, "Username:")
-    currentUsername := USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "User"
-    usernameEdit := profileGui.Add("Edit", "x20 y105 w460 h30 Background" COLORS.card " c" COLORS.text, currentUsername)
-    
-    profileGui.Add("Text", "x20 y150 w460 c" COLORS.text, "Bio (max 500 characters):")
-    currentBio := USER_PROFILE.Has("bio") ? USER_PROFILE["bio"] : ""
-    bioEdit := profileGui.Add("Edit", "x20 y175 w460 h100 Multi Background" COLORS.card " c" COLORS.text, currentBio)
-    
-    profileGui.Add("Text", "x20 y290 w460 c" COLORS.text, "Profile Picture:")
-    
-    if USER_PROFILE.Has("picture") && USER_PROFILE["picture"] != "" {
-        profileGui.Add("Text", "x20 y315 w460 c" COLORS.textDim, "✅ Profile picture set")
-    } else {
-        profileGui.Add("Text", "x20 y315 w460 c" COLORS.textDim, "No profile picture set")
-    }
-    
-    uploadBtn := profileGui.Add("Button", "x20 y345 w200 h35 Background" COLORS.accentAlt, "📷 Choose Picture")
-    uploadBtn.SetFont("s10")
-    uploadBtn.OnEvent("Click", (*) => ChooseProfilePicture())
-    
-    profileGui.Add("Text", "x20 y395 w460 c" COLORS.textDim, "Statistics:")
-    totalMacros := USER_PROFILE.Has("total_macros") ? USER_PROFILE["total_macros"] : "0"
-    profileGui.Add("Text", "x20 y420 w460 c" COLORS.text, "Total Macros Run: " totalMacros)
-    
-    saveBtn := profileGui.Add("Button", "x20 y470 w220 h40 Background" COLORS.success, "💾 Save Changes")
-    saveBtn.SetFont("s11 bold")
-    cancelBtn := profileGui.Add("Button", "x260 y470 w220 h40 Background" COLORS.danger, "❌ Cancel")
-    cancelBtn.SetFont("s11 bold")
-    
-    saveBtn.OnEvent("Click", (*) => SaveProfile())
-    cancelBtn.OnEvent("Click", (*) => profileGui.Destroy())
-    
-    profileGui.Show("w500 h530")
-    
-    SaveProfile() {
-        username := usernameEdit.Value
-        bio := bioEdit.Value
-        
-        if (username = "") {
-            MsgBox "Username cannot be empty!", "Error"
-            return
-        }
-        
-        if !FileExist(SESSION_TOKEN_FILE) {
-            MsgBox "Not logged in!", "Error"
-            return
-        }
-        
-        try {
-            sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
-            
-            body := '{"session_token":"' JsonEscape(sessionToken) '",'
-                  . '"username":"' JsonEscape(username) '",'
-                  . '"bio":"' JsonEscape(bio) '"}'
-            
-            ToolTip "Saving profile..."
-            
-            req := ComObject("WinHttp.WinHttpRequest.5.1")
-            req.SetTimeouts(10000, 10000, 10000, 10000)
-            req.Open("POST", WORKER_URL "/profile/update", false)
-            req.SetRequestHeader("Content-Type", "application/json")
-            req.Send(body)
-            
-            ToolTip
-            
-            if (req.Status = 200) {
-                MsgBox "✅ Profile updated successfully!", "Success", "Iconi T2"
-                LoadUserProfile()
-                profileGui.Destroy()
-            } else {
-                MsgBox "Failed to update profile: " req.Status, "Error"
-            }
-        } catch as err {
-            ToolTip
-            MsgBox "Error: " err.Message, "Error"
-        }
-    }
-    
-    ChooseProfilePicture() {
-        selectedFile := FileSelect(, , "Select Profile Picture", "Images (*.png; *.jpg; *.jpeg; *.gif)")
-        if (selectedFile = "")
-            return
-        
-        fileSize := 0
-        Loop Files, selectedFile
-            fileSize := A_LoopFileSize
-        
-        if (fileSize > 500000) {
-            MsgBox "Image too large! Please use an image under 500KB.", "Error"
-            return
-        }
-        
-        UploadProfilePicture(selectedFile)
-    }
-}
-
-UploadProfilePicture(imagePath) {
-    global WORKER_URL, SESSION_TOKEN_FILE
-    
-    if !FileExist(imagePath) {
-        MsgBox "Image file not found!", "Error"
-        return false
-    }
-    
-    if !FileExist(SESSION_TOKEN_FILE) {
-        MsgBox "Not logged in!", "Error"
-        return false
-    }
-    
-    try {
-        ToolTip "Converting image to base64..."
-        base64 := FileToBase64(imagePath)
-        ToolTip
-        
-        if (StrLen(base64) > 700000) {
-            MsgBox "Image too large! Please use a smaller image (max ~500KB)", "Error"
-            return false
-        }
-        
-        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
-        
-        SplitPath imagePath, , , &ext
-        mimeType := "image/" (ext = "jpg" ? "jpeg" : ext)
-        
-        body := '{"session_token":"' JsonEscape(sessionToken) '",'
-              . '"image_data":"data:' mimeType ';base64,' base64 '"}'
-        
-        ToolTip "Uploading profile picture..."
-        
-        req := ComObject("WinHttp.WinHttpRequest.5.1")
-        req.SetTimeouts(30000, 30000, 30000, 30000)
-        req.Open("POST", WORKER_URL "/profile/picture", false)
-        req.SetRequestHeader("Content-Type", "application/json")
-        req.Send(body)
-        
-        ToolTip
-        
-        if (req.Status = 200) {
-            MsgBox "✅ Profile picture uploaded successfully!", "Success", "Iconi T2"
-            return true
-        } else {
-            resp := req.ResponseText
-            MsgBox "Failed to upload: " resp, "Error"
-        }
-    } catch as err {
-        ToolTip
-        MsgBox "Error uploading picture: " err.Message, "Error"
     }
     
     return false
