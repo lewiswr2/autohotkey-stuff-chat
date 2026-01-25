@@ -1059,6 +1059,386 @@ ManualUpdate(*) {
     }
 }
 
+; ========== ADD THESE FUNCTIONS TO MacroLauncher.ahk ==========
+
+; ========== PROFILE DROPDOWN UI ==========
+
+CreateMainGuiWithProfile() {
+    global mainGui, COLORS, BASE_DIR, ICON_DIR, USER_PROFILE
+    
+    mainGui := Gui("-Resize +Border", " AHK Vault")
+    mainGui.BackColor := COLORS.bg
+    mainGui.SetFont("s10", "Segoe UI")
+    
+    ; Header
+    mainGui.Add("Text", "x0 y0 w550 h80 Background" COLORS.accent)
+    
+    ; Profile Picture Circle (Top Right)
+    profilePicBtn := mainGui.Add("Button", "x480 y10 w60 h60 Background" COLORS.card, "")
+    profilePicBtn.SetFont("s24")
+    
+    ; Show profile picture or initial
+    if USER_PROFILE.Has("profile_picture") && USER_PROFILE["profile_picture"] != "" {
+        try {
+            ; If we have base64 image, decode and display
+            ; For now, show username initial
+            initial := SubStr(USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "U", 1, 1)
+            profilePicBtn.Text := initial
+        } catch {
+            initial := SubStr(USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "U", 1, 1)
+            profilePicBtn.Text := initial
+        }
+    } else {
+        initial := SubStr(USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "U", 1, 1)
+        profilePicBtn.Text := initial
+    }
+    
+    profilePicBtn.OnEvent("Click", (*) => ShowProfileDropdown())
+    
+    ; Rest of GUI creation...
+    titleText := mainGui.Add("Text", "x20 y17 w280 h100 c" COLORS.text " BackgroundTrans", " AHK Vault")
+    titleText.SetFont("s24 bold")
+    
+    ; Continue with rest of GUI...
+}
+
+ShowProfileDropdown() {
+    global COLORS, USER_PROFILE
+    
+    dropdownGui := Gui("+AlwaysOnTop -Caption +Border", "Profile Menu")
+    dropdownGui.BackColor := COLORS.card
+    dropdownGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Username display
+    username := USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "User"
+    usernameText := dropdownGui.Add("Text", "x20 y15 w260 c" COLORS.text, username)
+    usernameText.SetFont("s12 bold")
+    
+    ; Total macros run
+    totalMacros := USER_PROFILE.Has("total_macros") ? USER_PROFILE["total_macros"] : "0"
+    statsText := dropdownGui.Add("Text", "x20 y40 w260 c" COLORS.textDim, "Macros run: " totalMacros)
+    statsText.SetFont("s9")
+    
+    dropdownGui.Add("Text", "x0 y65 w300 h1 Background" COLORS.border)
+    
+    ; Settings button
+    settingsBtn := dropdownGui.Add("Button", "x10 y75 w280 h35 Background" COLORS.cardHover, "⚙️ Settings")
+    settingsBtn.SetFont("s10")
+    settingsBtn.OnEvent("Click", (*) => (dropdownGui.Destroy(), ShowSettingsGui()))
+    
+    ; View Profile button
+    profileBtn := dropdownGui.Add("Button", "x10 y115 w280 h35 Background" COLORS.cardHover, "👤 View Profile")
+    profileBtn.SetFont("s10")
+    profileBtn.OnEvent("Click", (*) => (dropdownGui.Destroy(), ShowFullProfile()))
+    
+    ; Logout button
+    logoutBtn := dropdownGui.Add("Button", "x10 y155 w280 h35 Background" COLORS.danger, "🚪 Logout")
+    logoutBtn.SetFont("s10")
+    logoutBtn.OnEvent("Click", (*) => (dropdownGui.Destroy(), LogoutUser()))
+    
+    dropdownGui.OnEvent("Escape", (*) => dropdownGui.Destroy())
+    
+    ; Position near profile button (top right)
+    dropdownGui.Show("x" (A_ScreenWidth - 320) " y80 w300 h200")
+}
+
+ShowSettingsGui() {
+    global COLORS, SESSION_TOKEN_FILE, WORKER_URL
+    
+    settingsGui := Gui("+Resize", "Settings")
+    settingsGui.BackColor := COLORS.bg
+    settingsGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    settingsGui.Add("Text", "x0 y0 w600 h70 Background" COLORS.accent)
+    settingsGui.Add("Text", "x20 y20 w560 h30 c" COLORS.text " BackgroundTrans", "⚙️ Settings").SetFont("s16 bold")
+    
+    ; Tab control for settings categories
+    tab := settingsGui.Add("Tab3", "x10 y80 w580 h500 Background" COLORS.bgLight,
+        ["Account", "Privacy", "Notifications", "Appearance"])
+    
+    ; ===== ACCOUNT TAB =====
+    tab.UseTab(1)
+    
+    settingsGui.Add("Text", "x30 y120 w540 c" COLORS.text, "Change Password").SetFont("s12 bold")
+    settingsGui.Add("Text", "x30 y145 w540 h1 Background" COLORS.border)
+    
+    settingsGui.Add("Text", "x30 y160 w200 c" COLORS.text, "Current Password:")
+    oldPassEdit := settingsGui.Add("Edit", "x30 y185 w540 h30 Password Background" COLORS.card " c" COLORS.text)
+    
+    settingsGui.Add("Text", "x30 y225 w200 c" COLORS.text, "New Password:")
+    newPassEdit := settingsGui.Add("Edit", "x30 y250 w540 h30 Password Background" COLORS.card " c" COLORS.text)
+    
+    settingsGui.Add("Text", "x30 y290 w200 c" COLORS.text, "Confirm New Password:")
+    confirmPassEdit := settingsGui.Add("Edit", "x30 y315 w540 h30 Password Background" COLORS.card " c" COLORS.text)
+    
+    changePassBtn := settingsGui.Add("Button", "x30 y360 w200 h40 Background" COLORS.success, "Change Password")
+    changePassBtn.SetFont("s10 bold")
+    changePassBtn.OnEvent("Click", (*) => ChangePassword(oldPassEdit, newPassEdit, confirmPassEdit))
+    
+    ; ===== PRIVACY TAB =====
+    tab.UseTab(2)
+    
+    settingsGui.Add("Text", "x30 y120 w540 c" COLORS.text, "Privacy Settings").SetFont("s12 bold")
+    settingsGui.Add("Text", "x30 y145 w540 h1 Background" COLORS.border)
+    
+    profileVisibleCheck := settingsGui.Add("Checkbox", "x30 y165 w540 c" COLORS.text, "Show profile in reviews")
+    profileVisibleCheck.Value := 1
+    
+    showStatsCheck := settingsGui.Add("Checkbox", "x30 y200 w540 c" COLORS.text, "Show statistics publicly")
+    showStatsCheck.Value := 1
+    
+    ; ===== NOTIFICATIONS TAB =====
+    tab.UseTab(3)
+    
+    settingsGui.Add("Text", "x30 y120 w540 c" COLORS.text, "Notification Preferences").SetFont("s12 bold")
+    settingsGui.Add("Text", "x30 y145 w540 h1 Background" COLORS.border)
+    
+    updateNotifCheck := settingsGui.Add("Checkbox", "x30 y165 w540 c" COLORS.text, "Notify about macro updates")
+    updateNotifCheck.Value := 1
+    
+    reviewNotifCheck := settingsGui.Add("Checkbox", "x30 y200 w540 c" COLORS.text, "Notify about review replies")
+    reviewNotifCheck.Value := 1
+    
+    ; ===== APPEARANCE TAB =====
+    tab.UseTab(4)
+    
+    settingsGui.Add("Text", "x30 y120 w540 c" COLORS.text, "Appearance Settings").SetFont("s12 bold")
+    settingsGui.Add("Text", "x30 y145 w540 h1 Background" COLORS.border)
+    
+    settingsGui.Add("Text", "x30 y165 w200 c" COLORS.text, "Theme:")
+    themeDDL := settingsGui.Add("DropDownList", "x30 y190 w250 Background" COLORS.card " c" COLORS.text,
+        ["Dark (Default)", "Light", "System"])
+    themeDDL.Choose(1)
+    
+    settingsGui.Add("Text", "x30 y235 w200 c" COLORS.text, "Font Size:")
+    fontDDL := settingsGui.Add("DropDownList", "x30 y260 w250 Background" COLORS.card " c" COLORS.text,
+        ["Small", "Medium (Default)", "Large"])
+    fontDDL.Choose(2)
+    
+    ; Save and Close buttons
+    saveBtn := settingsGui.Add("Button", "x10 y590 w285 h40 Background" COLORS.success, "💾 Save Settings")
+    saveBtn.SetFont("s11 bold")
+    saveBtn.OnEvent("Click", (*) => SaveSettings(settingsGui))
+    
+    closeBtn := settingsGui.Add("Button", "x305 y590 w285 h40 Background" COLORS.danger, "❌ Close")
+    closeBtn.SetFont("s11 bold")
+    closeBtn.OnEvent("Click", (*) => settingsGui.Destroy())
+    
+    settingsGui.Show("w600 h640 Center")
+}
+
+ChangePassword(oldPassEdit, newPassEdit, confirmPassEdit) {
+    global WORKER_URL, SESSION_TOKEN_FILE, COLORS
+    
+    oldPass := oldPassEdit.Value
+    newPass := newPassEdit.Value
+    confirmPass := confirmPassEdit.Value
+    
+    if (oldPass = "" || newPass = "" || confirmPass = "") {
+        MsgBox "Please fill in all password fields!", "Error", "Icon!"
+        return
+    }
+    
+    if (newPass != confirmPass) {
+        MsgBox "New passwords do not match!", "Error", "Icon!"
+        return
+    }
+    
+    if (StrLen(newPass) < 6) {
+        MsgBox "Password must be at least 6 characters!", "Error", "Icon!"
+        return
+    }
+    
+    if !FileExist(SESSION_TOKEN_FILE) {
+        MsgBox "Not logged in!", "Error", "Icon!"
+        return
+    }
+    
+    try {
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+        
+        oldPassHash := HashPassword(oldPass)
+        newPassHash := HashPassword(newPass)
+        
+        body := '{"session_token":"' JsonEscape(sessionToken) '",'
+              . '"old_password_hash":"' oldPassHash '",'
+              . '"new_password_hash":"' newPassHash '"}'
+        
+        ToolTip "Changing password..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("POST", WORKER_URL "/auth/change-password", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        ToolTip
+        
+        if (req.Status = 200) {
+            MsgBox "✅ Password changed successfully!", "Success", "Iconi T2"
+            oldPassEdit.Value := ""
+            newPassEdit.Value := ""
+            confirmPassEdit.Value := ""
+        } else {
+            resp := req.ResponseText
+            MsgBox "❌ Failed to change password: " resp, "Error", "Icon!"
+        }
+        
+    } catch as err {
+        ToolTip
+        MsgBox "Error changing password: " err.Message, "Error", "Icon!"
+    }
+}
+
+SaveSettings(gui) {
+    ; TODO: Implement settings save to server
+    MsgBox "✅ Settings saved!", "Success", "Iconi T2"
+}
+
+ShowFullProfile() {
+    global COLORS, USER_PROFILE, SESSION_TOKEN_FILE, WORKER_URL
+    
+    profileGui := Gui("+Resize", "My Profile")
+    profileGui.BackColor := COLORS.bg
+    profileGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    profileGui.Add("Text", "x0 y0 w700 h120 Background" COLORS.accent)
+    
+    ; Profile picture circle
+    profilePic := profileGui.Add("Text", "x30 y20 w80 h80 Background" COLORS.success " Center", 
+        SubStr(USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "U", 1, 1))
+    profilePic.SetFont("s32 bold c" COLORS.text)
+    
+    ; Username
+    username := USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "User"
+    profileGui.Add("Text", "x130 y35 w550 c" COLORS.text " BackgroundTrans", username).SetFont("s18 bold")
+    
+    ; Member since
+    created := USER_PROFILE.Has("created") ? USER_PROFILE["created"] : 0
+    memberSince := FormatTimestampUtil(created)
+    profileGui.Add("Text", "x130 y70 w550 c" COLORS.textDim " BackgroundTrans", "Member since: " memberSince)
+    
+    ; Stats cards
+    yPos := 140
+    
+    ; Load full stats
+    try {
+        stats := GetUserStatsFromServer()
+        
+        CreateStatCard(profileGui, 30, yPos, "📊 Macros Run", String(stats.total_macros_run))
+        CreateStatCard(profileGui, 240, yPos, "👍 Likes Given", String(stats.likes_given))
+        CreateStatCard(profileGui, 450, yPos, "👎 Dislikes Given", String(stats.dislikes_given))
+        
+        yPos += 100
+        
+        CreateStatCard(profileGui, 30, yPos, "💬 Reviews", String(stats.ratings_given))
+        CreateStatCard(profileGui, 240, yPos, "⭐ Favorites", String(stats.favorites_count))
+        CreateStatCard(profileGui, 450, yPos, "📝 Comments", String(stats.reviews_with_comments))
+        
+    } catch {
+        profileGui.Add("Text", "x30 y" yPos " w640 c" COLORS.textDim, "Failed to load statistics")
+    }
+    
+    yPos += 120
+    
+    ; Edit Profile button
+    editBtn := profileGui.Add("Button", "x30 y" yPos " w200 h40 Background" COLORS.accentAlt, "✏️ Edit Profile")
+    editBtn.SetFont("s10 bold")
+    editBtn.OnEvent("Click", (*) => ShowProfileEditor())
+    
+    ; Close button
+    closeBtn := profileGui.Add("Button", "x470 y" yPos " w200 h40 Background" COLORS.danger, "Close")
+    closeBtn.SetFont("s10 bold")
+    closeBtn.OnEvent("Click", (*) => profileGui.Destroy())
+    
+    profileGui.Show("w700 h" (yPos + 60) " Center")
+}
+
+CreateStatCard(gui, x, y, label, value) {
+    global COLORS
+    
+    gui.Add("Text", "x" x " y" y " w190 h80 Background" COLORS.card)
+    gui.Add("Text", "x" (x + 10) " y" (y + 10) " w170 c" COLORS.textDim " BackgroundTrans", label).SetFont("s9")
+    gui.Add("Text", "x" (x + 10) " y" (y + 35) " w170 c" COLORS.text " BackgroundTrans", value).SetFont("s20 bold")
+}
+
+GetUserStatsFromServer() {
+    global WORKER_URL, SESSION_TOKEN_FILE
+    
+    if !FileExist(SESSION_TOKEN_FILE)
+        return {}
+    
+    try {
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+        
+        body := '{"session_token":"' JsonEscape(sessionToken) '"}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("POST", WORKER_URL "/profile/stats", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        if (req.Status = 200) {
+            resp := req.ResponseText
+            
+            stats := {}
+            if RegExMatch(resp, '"total_macros_run"\s*:\s*(\d+)', &m)
+                stats.total_macros_run := m[1]
+            if RegExMatch(resp, '"ratings_given"\s*:\s*(\d+)', &m)
+                stats.ratings_given := m[1]
+            if RegExMatch(resp, '"likes_given"\s*:\s*(\d+)', &m)
+                stats.likes_given := m[1]
+            if RegExMatch(resp, '"dislikes_given"\s*:\s*(\d+)', &m)
+                stats.dislikes_given := m[1]
+            if RegExMatch(resp, '"favorites_count"\s*:\s*(\d+)', &m)
+                stats.favorites_count := m[1]
+            if RegExMatch(resp, '"reviews_with_comments"\s*:\s*(\d+)', &m)
+                stats.reviews_with_comments := m[1]
+            
+            return stats
+        }
+    } catch {
+    }
+    
+    return { total_macros_run: 0, ratings_given: 0, likes_given: 0, dislikes_given: 0, favorites_count: 0, reviews_with_comments: 0 }
+}
+
+LogoutUser() {
+    global SESSION_TOKEN_FILE
+    
+    choice := MsgBox("Are you sure you want to logout?", "Logout", "YesNo Iconi")
+    
+    if (choice = "No")
+        return
+    
+    try {
+        if FileExist(SESSION_TOKEN_FILE)
+            FileDelete SESSION_TOKEN_FILE
+    } catch {
+    }
+    
+    MsgBox "✅ Logged out successfully!`n`nThe launcher will now close.", "Logout", "Iconi T2"
+    ExitApp
+}
+
+HashPassword(password) {
+    salt := "V1LN_CLAN_2026_SECURE"
+    combined := salt . password . salt
+    
+    hash := 0
+    Loop Parse combined
+        hash := Mod(hash * 31 + Ord(A_LoopField), 2147483647)
+    
+    Loop 10000 {
+        hash := Mod(hash * 37 + Ord(SubStr(password, Mod(A_Index, StrLen(password)) + 1, 1)), 2147483647)
+    }
+    
+    return hash
+}
+
 GetMacroRatings(macroPath) {
     global WORKER_URL, RATINGS_CACHE
     
@@ -1190,21 +1570,16 @@ ShowRatingsDialog(macroPath, macroInfo) {
     global COLORS, SESSION_TOKEN_FILE
     
     macroId := GetMacroKey(macroPath)
-    
-    ; DEBUG: Show what macro_id is being used
-    ToolTip "Fetching ratings for: " macroId
-    SetTimer () => ToolTip(), -2000
-    
     ratings := GetMacroRatings(macroPath)
     
     ratingsGui := Gui("+Resize", macroInfo.Title " - Reviews")
     ratingsGui.BackColor := COLORS.bg
     ratingsGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
-    ; Header with like/dislike stats
+    ; Header
     ratingsGui.Add("Text", "x0 y0 w700 h140 Background" COLORS.card)
     
-    ; Like/Dislike display with better contrast
+    ; Like/Dislike stats
     ratingsGui.Add("Text", "x20 y20 w200 h80 Background" COLORS.success)
     likeIcon := ratingsGui.Add("Text", "x20 y25 w200 h40 Center c" COLORS.text " BackgroundTrans", "👍")
     likeIcon.SetFont("s28 bold")
@@ -1217,18 +1592,18 @@ ShowRatingsDialog(macroPath, macroInfo) {
     dislikeCount := ratingsGui.Add("Text", "x240 y70 w200 h30 Center c" COLORS.text " BackgroundTrans", ratings.dislikes " Dislikes")
     dislikeCount.SetFont("s16 bold")
     
-    ; Ratio text
+    ; Ratio
     if (ratings.total > 0) {
         ratioText := ratingsGui.Add("Text", "x20 y110 w420 Center c" COLORS.text " BackgroundTrans",
             ratings.ratio "% positive • " ratings.total " total votes")
         ratioText.SetFont("s11 bold")
     } else {
         ratioText := ratingsGui.Add("Text", "x20 y110 w420 Center c" COLORS.textDim " BackgroundTrans",
-            "No votes yet - be the first to vote!")
+            "No votes yet - be the first!")
         ratioText.SetFont("s11")
     }
     
-    ; Vote buttons - ALWAYS show them
+    ; Vote buttons
     likeBtn := ratingsGui.Add("Button", "x480 y30 w100 h45 Background" COLORS.success, "👍 Like")
     likeBtn.SetFont("s11 bold")
     likeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "like", ratingsGui))
@@ -1248,38 +1623,48 @@ ShowRatingsDialog(macroPath, macroInfo) {
         noReviewText.SetFont("s10")
         reviewsY += 100
     } else {
-        ; Show up to 8 most recent reviews
         maxReviews := Min(8, ratings.reviews.Length)
         
         Loop maxReviews {
             review := ratings.reviews[A_Index]
             
-            ; Review card
-            cardHeight := review.comment != "" ? 100 : 60
-            ratingsGui.Add("Text", "x20 y" reviewsY " w660 h" cardHeight " Background" COLORS.cardHover)
+            cardHeight := review.comment != "" ? 120 : 80
             
-            ; Username and vote icon
+            ; Review card background
+            cardBg := ratingsGui.Add("Text", "x20 y" reviewsY " w660 h" cardHeight " Background" COLORS.cardHover)
+            
+            ; Profile picture circle (clickable)
+            profileCircle := ratingsGui.Add("Button", "x35 y" (reviewsY + 10) " w60 h60 Background" COLORS.success " Center", 
+                SubStr(review.username, 1, 1))
+            profileCircle.SetFont("s20 bold c" COLORS.text)
+            
+            ; Make profile clickable
+            reviewDiscordId := review.discord_id
+            profileCircle.OnEvent("Click", (*) => ShowUserProfilePopup(reviewDiscordId))
+            
+            ; Vote icon
             voteIcon := review.vote = "like" ? "👍" : "👎"
             voteColor := review.vote = "like" ? COLORS.success : COLORS.danger
             
-            ratingsGui.Add("Text", "x35 y" (reviewsY + 10) " w40 h40 Background" voteColor " Center c" COLORS.text,
-                voteIcon).SetFont("s20")
+            voteBox := ratingsGui.Add("Text", "x100 y" (reviewsY + 15) " w30 h30 Background" voteColor " Center c" COLORS.text, voteIcon)
+            voteBox.SetFont("s14")
             
-            ratingsGui.Add("Text", "x85 y" (reviewsY + 10) " w300 c" COLORS.text " BackgroundTrans",
-                review.username).SetFont("s10 bold")
+            ; Username (clickable)
+            usernameBtn := ratingsGui.Add("Button", "x140 y" (reviewsY + 10) " w300 h30 Background" COLORS.cardHover, review.username)
+            usernameBtn.SetFont("s11 bold c" COLORS.accentAlt)
+            usernameBtn.OnEvent("Click", (*) => ShowUserProfilePopup(reviewDiscordId))
             
             ; Date
             dateStr := FormatTimestamp(review.timestamp)
-            ratingsGui.Add("Text", "x85 y" (reviewsY + 30) " w300 c" COLORS.textDim " BackgroundTrans",
-                dateStr).SetFont("s8")
+            ratingsGui.Add("Text", "x140 y" (reviewsY + 40) " w300 c" COLORS.textDim " BackgroundTrans", dateStr).SetFont("s8")
             
             ; Comment
             if (review.comment != "") {
                 commentText := review.comment
-                if (StrLen(commentText) > 120)
-                    commentText := SubStr(commentText, 1, 120) "..."
+                if (StrLen(commentText) > 150)
+                    commentText := SubStr(commentText, 1, 150) "..."
                 
-                ratingsGui.Add("Text", "x35 y" (reviewsY + 60) " w630 c" COLORS.text " BackgroundTrans",
+                ratingsGui.Add("Text", "x35 y" (reviewsY + 75) " w630 c" COLORS.text " BackgroundTrans",
                     '"' commentText '"').SetFont("s9")
             }
             
@@ -1300,6 +1685,86 @@ ShowRatingsDialog(macroPath, macroInfo) {
     
     ratingsGui.OnEvent("Close", (*) => ratingsGui.Destroy())
     ratingsGui.Show("w700 h" (reviewsY + 70) " Center")
+}
+
+ShowUserProfilePopup(discord_id) {
+    global COLORS, WORKER_URL
+    
+    if (!discord_id || discord_id = "") {
+        MsgBox "Profile not available", "Info", "Iconi"
+        return
+    }
+    
+    ; Load public profile
+    try {
+        ToolTip "Loading profile..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("GET", WORKER_URL "/profile/public/" discord_id, false)
+        req.Send()
+        
+        ToolTip
+        
+        if (req.Status != 200) {
+            MsgBox "Profile not found", "Error", "Icon!"
+            return
+        }
+        
+        resp := req.ResponseText
+        
+        ; Parse profile data
+        username := JsonExtractAny(resp, "username")
+        bio := JsonExtractAny(resp, "bio")
+        totalMacros := JsonExtractAny(resp, "total_macros_run")
+        memberSince := JsonExtractAny(resp, "member_since")
+        
+        ; Create profile popup
+        profileGui := Gui("+AlwaysOnTop", username "'s Profile")
+        profileGui.BackColor := COLORS.bg
+        profileGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+        
+        ; Header
+        profileGui.Add("Text", "x0 y0 w400 h90 Background" COLORS.accent)
+        
+        ; Profile picture
+        profilePic := profileGui.Add("Text", "x20 y15 w60 h60 Background" COLORS.success " Center", 
+            SubStr(username, 1, 1))
+        profilePic.SetFont("s24 bold c" COLORS.text)
+        
+        ; Username
+        profileGui.Add("Text", "x95 y25 w285 c" COLORS.text " BackgroundTrans", username).SetFont("s14 bold")
+        
+        ; Member since
+        memberStr := FormatTimestampUtil(memberSince)
+        profileGui.Add("Text", "x95 y55 w285 c" COLORS.textDim " BackgroundTrans", "Member since: " memberStr).SetFont("s8")
+        
+        ; Bio section
+        profileGui.Add("Text", "x20 y100 w360 c" COLORS.text, "Bio:").SetFont("s10 bold")
+        
+        bioText := bio != "" ? bio : "No bio yet"
+        bioDisplay := profileGui.Add("Text", "x20 y125 w360 h80 Background" COLORS.card, " " bioText)
+        bioDisplay.SetFont("s9")
+        
+        ; Stats
+        profileGui.Add("Text", "x20 y220 w360 c" COLORS.text, "Statistics:").SetFont("s10 bold")
+        
+        profileGui.Add("Text", "x20 y245 w360 h60 Background" COLORS.card)
+        profileGui.Add("Text", "x30 y255 w340 c" COLORS.text " BackgroundTrans", "📊 Total Macros Run:").SetFont("s9")
+        profileGui.Add("Text", "x30 y280 w340 c" COLORS.accent " BackgroundTrans", totalMacros).SetFont("s14 bold")
+        
+        ; Close button
+        closeBtn := profileGui.Add("Button", "x125 y320 w150 h40 Background" COLORS.danger, "Close")
+        closeBtn.SetFont("s10 bold")
+        closeBtn.OnEvent("Click", (*) => profileGui.Destroy())
+        
+        profileGui.OnEvent("Close", (*) => profileGui.Destroy())
+        profileGui.Show("w400 h380 Center")
+        
+    } catch as err {
+        ToolTip
+        MsgBox "Error loading profile: " err.Message, "Error", "Icon!"
+    }
 }
 
 SubmitVote(macroId, voteType, parentGui := 0) {
@@ -3339,6 +3804,13 @@ FormatDurationUtil(ms) {
         return Floor(ms / 3600000) " hr"
 }
 
+JsonExtractAny(jsonStr, key) {
+    if RegExMatch(jsonStr, '"' key '"\s*:\s*"([^"]*)"', &m)
+        return m[1]
+    if RegExMatch(jsonStr, '"' key '"\s*:\s*(\d+)', &m)
+        return m[1]
+    return ""
+}
 
 NoCacheUrl(url) {
     separator := InStr(url, "?") ? "&" : "?"

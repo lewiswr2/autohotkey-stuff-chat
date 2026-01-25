@@ -57,30 +57,11 @@ global COLORS := {
 }
 
 ; =========================================
-InitializeSecureVault()
-SetTaskbarIcon()
 CheckLoginAppUpdate()
 LoadWebhookUrl()
-did := ReadDiscordId()
 CheckLockout()
-EnsureDiscordId()
 
-if !ValidateNotBanned() {
-    ShowBanMessage()
-    ExitApp
-}
-
-if CheckSession() {
-    if !ValidateNotBanned() {
-        ShowBanMessage()
-        ExitApp
-    }
-    StartSessionWatchdog()
-    LaunchMainApp()
-    ExitApp
-}
-
-CreateLoginGui()
+MainLoginFlow()
 return
 
 ; ============= SECURITY FUNCTIONS =============
@@ -138,7 +119,436 @@ InitializeSecureVault() {
     }
 }
 
-; ========== NEW FUNCTIONS ==========
+CheckGlobalKey() {
+    global WORKER_URL, COLORS
+    
+    keyGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Access Key")
+    keyGui.BackColor := COLORS.bg
+    keyGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    keyGui.Add("Text", "x0 y0 w500 h80 Background" COLORS.accent)
+    keyGui.Add("Text", "x20 y20 w460 h30 c" COLORS.text " BackgroundTrans", "🔐 Enter Access Key").SetFont("s16 bold")
+    
+    keyGui.Add("Text", "x25 y100 w450 h200 Background" COLORS.card)
+    
+    keyGui.Add("Text", "x45 y120 w410 c" COLORS.text " BackgroundTrans", 
+        "This application requires an access key.`n`nPlease enter the key to continue:")
+    
+    keyEdit := keyGui.Add("Edit", "x45 y180 w410 h30 Password Background" COLORS.bgLight " c" COLORS.text)
+    
+    statusText := keyGui.Add("Text", "x45 y220 w410 Center c" COLORS.danger " BackgroundTrans", "")
+    
+    continueBtn := keyGui.Add("Button", "x165 y320 w170 h40 Background" COLORS.success, "Continue")
+    continueBtn.SetFont("s11 bold")
+    
+    keyValid := false
+    
+    continueBtn.OnEvent("Click", (*) => VerifyKeyAndContinue(keyEdit, statusText, &keyValid, keyGui))
+    
+    keyGui.OnEvent("Close", (*) => (keyValid := false, keyGui.Destroy()))
+    
+    keyGui.Show("w500 h380 Center")
+    WinWaitClose(keyGui.Hwnd)
+    
+    return keyValid
+}
+
+VerifyKeyAndContinue(keyEdit, statusText, &keyValid, keyGui) {
+    key := Trim(keyEdit.Value)
+    
+    if (!key) {
+        statusText.Value := "Please enter a key"
+        SoundBeep(700, 120)
+        return
+    }
+    
+    keyValid := VerifyGlobalKey(key, statusText)
+    if (keyValid) {
+        keyGui.Destroy()
+    }
+}
+
+VerifyGlobalKey(key, statusControl) {
+    global WORKER_URL
+    
+    try {
+        body := '{"key":"' JsonEscape(key) '"}'
+        
+        ToolTip "Verifying key..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("POST", WORKER_URL "/auth/check-key", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        ToolTip
+        
+        if (req.Status = 200) {
+            resp := req.ResponseText
+            if RegExMatch(resp, '"valid"\s*:\s*true') {
+                return true
+            }
+        }
+        
+        statusControl.Value := "❌ Invalid access key"
+        SoundBeep(500, 200)
+        return false
+        
+    } catch as err {
+        ToolTip
+        statusControl.Value := "❌ Connection error"
+        SoundBeep(500, 200)
+        return false
+    }
+}
+
+CreateLoginOrRegisterGui() {
+    global COLORS
+    
+    choiceGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Welcome")
+    choiceGui.BackColor := COLORS.bg
+    choiceGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    choiceGui.Add("Text", "x0 y0 w500 h80 Background" COLORS.accent)
+    choiceGui.Add("Text", "x0 y15 w500 h50 Center c" COLORS.text " BackgroundTrans", "🔐 AHK VAULT").SetFont("s22 bold")
+    
+    choiceGui.Add("Text", "x25 y100 w450 h250 Background" COLORS.card)
+    
+    choiceGui.Add("Text", "x45 y120 w410 Center c" COLORS.text " BackgroundTrans", 
+        "Welcome to AHK Vault!").SetFont("s14 bold")
+    
+    choiceGui.Add("Text", "x45 y155 w410 Center c" COLORS.textDim " BackgroundTrans", 
+        "Please choose an option to continue:")
+    
+    loginBtn := choiceGui.Add("Button", "x75 y200 w350 h45 Background" COLORS.success, "🔓 Login")
+    loginBtn.SetFont("s12 bold")
+    
+    registerBtn := choiceGui.Add("Button", "x75 y255 w350 h45 Background" COLORS.accentAlt, "📝 Create Account")
+    registerBtn.SetFont("s12 bold")
+    
+    resultChoice := ""
+    
+    loginBtn.OnEvent("Click", (*) => (resultChoice := "login", choiceGui.Destroy()))
+    registerBtn.OnEvent("Click", (*) => (resultChoice := "register", choiceGui.Destroy()))
+    
+    choiceGui.OnEvent("Close", (*) => ExitApp())
+    choiceGui.Show("w500 h370 Center")
+    
+    WinWaitClose(choiceGui.Hwnd)
+    
+    return resultChoice
+}
+
+CreateRegistrationGui() {
+    global COLORS
+    
+    regGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Create Account")
+    regGui.BackColor := COLORS.bg
+    regGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    regGui.Add("Text", "x0 y0 w500 h80 Background" COLORS.accent)
+    regGui.Add("Text", "x20 y20 w460 h30 c" COLORS.text " BackgroundTrans", "📝 Create New Account").SetFont("s16 bold")
+    
+    regGui.Add("Text", "x25 y100 w450 h380 Background" COLORS.card)
+    
+    regGui.Add("Text", "x45 y120 c" COLORS.text " BackgroundTrans", "Username:")
+    usernameEdit := regGui.Add("Edit", "x45 y145 w410 h30 Background" COLORS.bgLight " c" COLORS.text)
+    
+    regGui.Add("Text", "x45 y185 c" COLORS.text " BackgroundTrans", "Password:")
+    passwordEdit := regGui.Add("Edit", "x45 y210 w410 h30 Password Background" COLORS.bgLight " c" COLORS.text)
+    
+    regGui.Add("Text", "x45 y250 c" COLORS.text " BackgroundTrans", "Confirm Password:")
+    confirmEdit := regGui.Add("Edit", "x45 y275 w410 h30 Password Background" COLORS.bgLight " c" COLORS.text)
+    
+    regGui.Add("Text", "x45 y315 c" COLORS.text " BackgroundTrans", "Discord ID:")
+    discordEdit := regGui.Add("Edit", "x45 y340 w410 h30 Background" COLORS.bgLight " c" COLORS.text)
+    
+    regGui.Add("Text", "x45 y380 w410 c" COLORS.textDim " BackgroundTrans", 
+        "• Username: 3-20 characters (letters, numbers, _ or -)`n"
+        . "• Password: At least 6 characters`n"
+        . "• Discord ID: Your Discord User ID (numbers only)").SetFont("s8")
+    
+    statusText := regGui.Add("Text", "x45 y440 w410 Center c" COLORS.danger " BackgroundTrans", "")
+    
+    registerBtn := regGui.Add("Button", "x75 y500 w170 h40 Background" COLORS.success, "Create Account")
+    registerBtn.SetFont("s11 bold")
+    
+    backBtn := regGui.Add("Button", "x255 y500 w170 h40 Background" COLORS.danger, "Back")
+    backBtn.SetFont("s11 bold")
+    
+    resultSuccess := false
+    
+    registerBtn.OnEvent("Click", (*) => (
+        resultSuccess := AttemptRegistration(
+            usernameEdit.Value,
+            passwordEdit.Value,
+            confirmEdit.Value,
+            discordEdit.Value,
+            statusText,
+            regGui
+        )
+    ))
+    
+    backBtn.OnEvent("Click", (*) => (resultSuccess := false, regGui.Destroy()))
+    regGui.OnEvent("Close", (*) => (resultSuccess := false, regGui.Destroy()))
+    
+    regGui.Show("w500 h560 Center")
+    WinWaitClose(regGui.Hwnd)
+    
+    return resultSuccess
+}
+
+AttemptRegistration(username, password, confirmPass, discordId, statusControl, gui) {
+    global WORKER_URL, SESSION_TOKEN_FILE
+    
+    username := Trim(username)
+    password := Trim(password)
+    confirmPass := Trim(confirmPass)
+    discordId := Trim(discordId)
+    
+    ; Validation
+    if (username = "" || password = "" || confirmPass = "" || discordId = "") {
+        statusControl.Value := "❌ All fields are required"
+        SoundBeep(700, 120)
+        return false
+    }
+    
+    if (!RegExMatch(username, "^[a-zA-Z0-9_-]{3,20}$")) {
+        statusControl.Value := "❌ Invalid username format"
+        SoundBeep(700, 120)
+        return false
+    }
+    
+    if (StrLen(password) < 6) {
+        statusControl.Value := "❌ Password must be at least 6 characters"
+        SoundBeep(700, 120)
+        return false
+    }
+    
+    if (password != confirmPass) {
+        statusControl.Value := "❌ Passwords do not match"
+        SoundBeep(700, 120)
+        return false
+    }
+    
+    if (!RegExMatch(discordId, "^\d{6,30}$")) {
+        statusControl.Value := "❌ Invalid Discord ID format"
+        SoundBeep(700, 120)
+        return false
+    }
+    
+    try {
+        hwid := GetHardwareId()
+        passwordHash := HashPassword(password)
+        
+        body := '{"discord_id":"' JsonEscape(discordId) '",'
+              . '"hwid":"' hwid '",'
+              . '"username":"' JsonEscape(username) '",'
+              . '"password_hash":"' passwordHash '",'
+              . '"pc":"' JsonEscape(A_ComputerName) '"}'
+        
+        statusControl.Value := "Creating account..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(15000, 15000, 15000, 15000)
+        req.Open("POST", WORKER_URL "/auth/register", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        if (req.Status = 200) {
+            resp := req.ResponseText
+            
+            if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &match) {
+                sessionToken := match[1]
+                
+                ; Save session
+                try {
+                    if FileExist(SESSION_TOKEN_FILE)
+                        FileDelete SESSION_TOKEN_FILE
+                    FileAppend sessionToken, SESSION_TOKEN_FILE
+                    Run 'attrib +h +s "' SESSION_TOKEN_FILE '"', , "Hide"
+                } catch {
+                    statusControl.Value := "❌ Failed to save session"
+                    return false
+                }
+                
+                ; Save username locally
+                SaveUsername(username)
+                
+                statusControl.Value := "✅ Account created!"
+                SoundBeep(1000, 100)
+                
+                MsgBox "✅ Account created successfully!`n`nWelcome to AHK Vault, " username "!", 
+                    "Registration Complete", "Iconi T2"
+                
+                gui.Destroy()
+                return true
+            }
+        } else if (req.Status = 409) {
+            statusControl.Value := "❌ Username already taken"
+            SoundBeep(500, 200)
+        } else {
+            resp := req.ResponseText
+            statusControl.Value := "❌ Registration failed: " req.Status
+            SoundBeep(500, 200)
+        }
+        
+    } catch as err {
+        statusControl.Value := "❌ Connection error"
+        SoundBeep(500, 200)
+    }
+    
+    return false
+}
+
+CreateEnhancedLoginGui() {
+    global COLORS
+    
+    loginGui := Gui("+AlwaysOnTop -MaximizeBox -MinimizeBox", "AHK Vault - Login")
+    loginGui.BackColor := COLORS.bg
+    loginGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    loginGui.Add("Text", "x0 y0 w500 h80 Background" COLORS.accent)
+    loginGui.Add("Text", "x0 y15 w500 h50 Center c" COLORS.text " BackgroundTrans", "🔐 AHK VAULT").SetFont("s22 bold")
+    
+    loginGui.Add("Text", "x50 y100 w400 h250 Background" COLORS.card)
+    
+    loginGui.Add("Text", "x70 y120 w360 h100 Center c" COLORS.text " BackgroundTrans", "Welcome Back").SetFont("s14 bold")
+    
+    loginGui.Add("Text", "x70 y180 c" COLORS.text " BackgroundTrans", "Username:")
+    usernameEdit := loginGui.Add("Edit", "x70 y205 w360 h35 Background" COLORS.bgLight " c" COLORS.text)
+    
+    loginGui.Add("Text", "x70 y250 c" COLORS.text " BackgroundTrans", "Password:")
+    passwordEdit := loginGui.Add("Edit", "x70 y275 w360 h35 Password Background" COLORS.bgLight " c" COLORS.text)
+    
+    statusText := loginGui.Add("Text", "x70 y320 w360 Center c" COLORS.danger " BackgroundTrans", "")
+    
+    loginBtn := loginGui.Add("Button", "x70 y360 w360 h45 Background" COLORS.success, "LOGIN")
+    loginBtn.SetFont("s12 bold")
+    
+    backBtn := loginGui.Add("Button", "x70 y415 w175 h35 Background" COLORS.card, "← Back")
+    backBtn.SetFont("s9")
+    
+    createBtn := loginGui.Add("Button", "x255 y415 w175 h35 Background" COLORS.accentAlt, "Create Account")
+    createBtn.SetFont("s9")
+    
+    loginGui.Add("Text", "x0 y465 w500 h30 Center c" COLORS.textDim " BackgroundTrans", 
+        "AHK Vault v" LAUNCHER_VERSION)
+    
+    loginBtn.OnEvent("Click", (*) => AttemptEnhancedLogin(usernameEdit.Value, passwordEdit.Value, statusText, loginGui))
+    backBtn.OnEvent("Click", (*) => (loginGui.Destroy(), MainLoginFlow()))
+    createBtn.OnEvent("Click", (*) => (loginGui.Destroy(), CreateRegistrationGui() ? LaunchMainApp() : MainLoginFlow()))
+    
+    passwordEdit.OnEvent("Change", (*) => statusText.Value := "")
+    
+    loginGui.OnEvent("Close", (*) => ExitApp())
+    loginGui.Show("w500 h500 Center")
+}
+
+AttemptEnhancedLogin(username, password, statusControl, gui) {
+    global SESSION_TOKEN_FILE, WORKER_URL
+    
+    if (Trim(username) = "" || Trim(password) = "") {
+        statusControl.Value := "Please enter username and password"
+        SoundBeep(700, 120)
+        return
+    }
+    
+    statusControl.Value := "Authenticating..."
+    
+    try {
+        hwid := GetHardwareId()
+        passwordHash := HashPassword(password)
+        
+        body := '{"username":"' JsonEscape(username) '",'
+              . '"password_hash":"' passwordHash '",'
+              . '"hwid":"' hwid '"}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(15000, 15000, 15000, 15000)
+        req.Open("POST", WORKER_URL "/auth/login", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        if (req.Status = 200) {
+            resp := req.ResponseText
+            
+            if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &match) {
+                sessionToken := match[1]
+                
+                try {
+                    if FileExist(SESSION_TOKEN_FILE)
+                        FileDelete SESSION_TOKEN_FILE
+                    FileAppend sessionToken, SESSION_TOKEN_FILE
+                    Run 'attrib +h +s "' SESSION_TOKEN_FILE '"', , "Hide"
+                } catch {
+                    statusControl.Value := "Failed to save session"
+                    return
+                }
+                
+                statusControl.Value := "✅ Login successful!"
+                SoundBeep(1000, 100)
+                
+                SaveUsername(username)
+                
+                gui.Destroy()
+                StartSessionWatchdog()
+                LaunchMainApp()
+                return
+            }
+        } else if (req.Status = 401) {
+            statusControl.Value := "❌ Invalid username or password"
+            SoundBeep(700, 120)
+        } else if (req.Status = 403) {
+            statusControl.Value := "❌ Account is banned or device not authorized"
+            SoundBeep(500, 200)
+        } else {
+            statusControl.Value := "❌ Login failed: " req.Status
+            SoundBeep(500, 200)
+        }
+        
+    } catch as err {
+        statusControl.Value := "❌ Connection error: " err.Message
+        SoundBeep(500, 200)
+    }
+}
+
+; ========== MAIN LOGIN FLOW (REPLACE EXISTING) ==========
+
+MainLoginFlow() {
+    ; Step 1: Check global key
+    if !CheckGlobalKey() {
+        MsgBox "Access key required to continue.", "AHK Vault", "Icon!"
+        ExitApp
+    }
+    
+    ; Step 2: Check if session exists
+    if CheckSession() {
+        if !ValidateNotBanned() {
+            ShowBanMessage()
+            ExitApp
+        }
+        StartSessionWatchdog()
+        LaunchMainApp()
+        return
+    }
+    
+    ; Step 3: Show login or register choice
+    choice := CreateLoginOrRegisterGui()
+    
+    if (choice = "login") {
+        CreateEnhancedLoginGui()
+    } else if (choice = "register") {
+        if CreateRegistrationGui() {
+            LaunchMainApp()
+        } else {
+            MainLoginFlow()
+        }
+    } else {
+        ExitApp
+    }
+}
 
 ReadUsername() {
     global USERNAME_FILE
@@ -1431,106 +1841,14 @@ CreateLoginGui() {
     ; Footer
     loginGui.Add("Text", "x0 y420 w500 h30 Center c" COLORS.textDim " BackgroundTrans", "AHK Vault v" LAUNCHER_VERSION)
     
-    ; Events
-    loginBtn.OnEvent("Click", (*) => AttemptLogin(currentUsername, passwordEdit.Value, statusText))
+    ; Events - FIXED: Use currentUsername (stored value), not usernameEdit
+    loginBtn.OnEvent("Click", (*) => AttemptEnhancedLogin(currentUsername, passwordEdit.Value, statusText, loginGui))
     changeUserBtn.OnEvent("Click", (*) => OnChangeUsername(loginGui))
     discordBtn.OnEvent("Click", (*) => SafeOpenURL(DISCORD_URL))
     passwordEdit.OnEvent("Change", (*) => statusText.Value := "")
     
     loginGui.OnEvent("Close", (*) => ExitApp())
     loginGui.Show("w500 h450 Center")
-}
-
-AttemptLogin(username, password, statusControl) {
-    global SESSION_TOKEN_FILE, MAX_ATTEMPTS, LOCKOUT_FILE
-
-    if (Trim(password) = "") {
-        statusControl.Value := "Please enter password"
-        SoundBeep(700, 120)
-        return
-    }
-    
-    static attemptCount := 0
-    
-    statusControl.Value := "Authenticating..."
-    
-    try {
-        discordId := ReadDiscordId()
-        hwid := GetHardwareId()
-        passwordHash := HashPassword(password)
-        
-        body := '{"discord_id":"' JsonEscape(discordId) '","hwid":"' hwid '","username":"' JsonEscape(username) '","password_hash":"' passwordHash '","pc":"' JsonEscape(A_ComputerName) '"}'
-        
-        resp := WorkerPostPublic("/auth/login", body)
-                
-        ; Check if banned
-        if RegExMatch(resp, '"error"\s*:\s*"banned"') {
-            statusControl.Value := "Account is banned"
-            SoundBeep(500, 200)
-            SendBanNotification(discordId, hwid, "login_attempt_while_banned")
-            ShowBanMessage()
-            return
-        }
-        
-        ; Check if HWID mismatch
-        if RegExMatch(resp, '"error"\s*:\s*"HWID mismatch"') {
-            statusControl.Value := "Device not authorized - contact admin"
-            SoundBeep(500, 200)
-            SaveMachineBan(discordId, "hwid_mismatch")
-            SendLoginFailNotification(username, "HWID mismatch")
-            return
-        }
-        
-        ; Check if successful
-        if RegExMatch(resp, '"success"\s*:\s*true') {
-            if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &match) {
-                sessionToken := match[1]
-                
-                try {
-                    if FileExist(SESSION_TOKEN_FILE)
-                        FileDelete SESSION_TOKEN_FILE
-                    FileAppend sessionToken, SESSION_TOKEN_FILE
-                    Run 'attrib +h +s "' SESSION_TOKEN_FILE '"', , "Hide"
-                } catch {
-                    statusControl.Value := "Failed to save session"
-                    return
-                }
-                
-                statusControl.Value := "✅ Login successful!"
-                SoundBeep(1000, 100)
-                
-                attemptCount := 0
-                
-                ; Send notification (which now includes profile initialization)
-                SendLoginSuccessNotification(username, discordId)
-                
-                DestroyLoginGui()
-                StartSessionWatchdog()
-                LaunchMainApp()
-                return
-            }
-        }
-        
-        ; Login failed
-        attemptCount++
-        SendLoginFailNotification(username, "Invalid credentials (Attempt " attemptCount "/" MAX_ATTEMPTS ")")
-        
-        if (attemptCount >= MAX_ATTEMPTS) {
-            try FileAppend A_Now, LOCKOUT_FILE
-            SendLockoutNotification(username)
-            statusControl.Value := "Too many failed attempts - locked for 30 minutes"
-            SoundBeep(500, 300)
-            ExitApp
-        }
-        
-        statusControl.Value := "Invalid password (" attemptCount "/" MAX_ATTEMPTS " attempts)"
-        SoundBeep(700, 120)
-        
-    } catch as err {
-        statusControl.Value := "Connection error: " err.Message
-        SoundBeep(500, 200)
-        SendLoginFailNotification(username, "Connection error: " err.Message)
-    }
 }
 
 DestroyLoginGui() {
