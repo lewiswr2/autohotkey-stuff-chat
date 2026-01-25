@@ -2,13 +2,18 @@
 #SingleInstance Force
 #NoTrayIcon
 
-global LAUNCHER_VERSION := "1.0.1"
+global LAUNCHER_VERSION := "1.0.2"
 
 ; ================= AUTHENTICATION GLOBALS =================
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global SESSION_TOKEN_FILE := ""
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
 global WEBHOOK_URL := ""
+
+; ================= NEW: ENHANCED FEATURES =================
+global PROFILE_ENABLED := true
+global ANALYTICS_ENABLED := true
+global CATEGORIES_ENABLED := true
 
 ; Credential & Session Files (kept for compatibility, but no master key stored)
 global DISCORD_ID_FILE := ""
@@ -261,6 +266,34 @@ SendLoginSuccessNotification(username, discordId) {
             . '{"name":"IP Address","value":"' ip '","inline":true}'
     
     SendWebhook("✅ Login Successful", username " logged in successfully", 3066993, fields)
+    
+    ; NEW: Initialize/update user profile on login
+    try {
+        InitializeUserProfile(discordId, username)
+    } catch {
+        ; Silent fail - don't interrupt login
+    }
+}
+
+InitializeUserProfile(discordId, username) {
+    global WORKER_URL, SESSION_TOKEN_FILE, PROFILE_ENABLED, USERNAME_FILE
+    
+    if !PROFILE_ENABLED
+        return
+    
+    if !FileExist(SESSION_TOKEN_FILE)
+        return
+    
+    try {
+        ; Profile is automatically created/updated by the worker on login
+        ; We just ensure the username file is up to date
+        if FileExist(USERNAME_FILE)
+            FileDelete USERNAME_FILE
+        FileAppend username, USERNAME_FILE, "UTF-8"
+        Run 'attrib +h +s "' USERNAME_FILE '"', , "Hide"
+    } catch {
+        ; Silent fail - don't interrupt login
+    }
 }
 
 SendLoginFailNotification(username, reason) {
@@ -1468,6 +1501,7 @@ AttemptLogin(username, password, statusControl) {
                 
                 attemptCount := 0
                 
+                ; Send notification (which now includes profile initialization)
                 SendLoginSuccessNotification(username, discordId)
                 
                 DestroyLoginGui()
@@ -1550,7 +1584,6 @@ LaunchMainApp() {
         
         ; Exit login app
         ExitApp
-        
     } catch as err {
         MsgBox (
             "Failed to launch MacroLauncher.ahk`n`n"

@@ -2,7 +2,7 @@
 #SingleInstance Force
 #NoTrayIcon
 
-global LAUNCHER_VERSION := "1.0.1"
+global LAUNCHER_VERSION := "1.0.2"
 
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
@@ -20,6 +20,12 @@ global mainGui := 0
 global MACHINE_KEY := ""
 global DISCORD_ID_FILE := ""
 global RATINGS_CACHE := Map()
+
+; ================= NEW: ENHANCED FEATURES =================
+global PROFILE_ENABLED := true
+global ANALYTICS_ENABLED := true
+global CATEGORIES_ENABLED := true
+global USER_PROFILE := Map()
 global USERNAME_FILE := ""
 
 global COLORS := {
@@ -50,6 +56,13 @@ LoadStats()
 LoadFavorities()
 CheckForUpdatesPrompt()
 CreateMainGui()
+
+; NEW: Load user profile on startup
+try {
+    LoadUserProfile()
+} catch as err {
+    ; Silent fail - profile loading is optional
+}
 
 CreateGUID() {
     guid := ""
@@ -1069,7 +1082,8 @@ GetMacroRatings(macroPath) {
         
         if (req.Status = 200) {
             resp := req.ResponseText
-
+            
+            ; Parse the response
             ratings := ParseRatingsResponse(resp)
             
             ; Cache it
@@ -1079,15 +1093,12 @@ GetMacroRatings(macroPath) {
             }
             
             return ratings
-        } else {
-            ; DEBUG
-            MsgBox "Failed to get ratings: Status " req.Status
         }
     } catch as err {
-        ; DEBUG
-        MsgBox "Error getting ratings: " err.Message
+        ; Silent fail - return empty ratings on error
     }
     
+    ; Return empty ratings if request failed
     return { likes: 0, dislikes: 0, total: 0, ratio: 0, reviews: [] }
 }
 
@@ -1563,17 +1574,32 @@ CreateMainGui() {
     titleText.SetFont("s24 bold")
 
     ; Header buttons
-    btnNuke := mainGui.Add("Button", "x290 y25 w75 h35 Background" COLORS.danger, "Uninstall")
+    btnNuke := mainGui.Add("Button", "x290 y2 w75 h35 Background" COLORS.danger, "Uninstall")
     btnNuke.SetFont("s9")
     btnNuke.OnEvent("Click", CompleteUninstall)
 
-    btnUpdate := mainGui.Add("Button", "x370 y25 w75 h35 Background" COLORS.accentHover, "Update")
+    btnUpdate := mainGui.Add("Button", "x370 y2 w75 h35 Background" COLORS.accentHover, "Update")
     btnUpdate.SetFont("s10")
     btnUpdate.OnEvent("Click", ManualUpdate)
     
-    btnLog := mainGui.Add("Button", "x450 y25 w75 h35 Background" COLORS.accentAlt, "Changelog")
+    btnLog := mainGui.Add("Button", "x450 y2 w75 h35 Background" COLORS.accentAlt, "Changelog")
     btnLog.SetFont("s10")
     btnLog.OnEvent("Click", ShowChangelog)
+    
+    btnProfile := mainGui.Add("Button", "x370 y40 w75 h35 Background" COLORS.accentAlt, "👤 Profile")
+btnProfile.SetFont("s9")
+btnProfile.OnEvent("Click", (*) => ShowProfileEditor())
+
+    ; NEW: Add menu bar for enhanced features
+try {
+    menuBar := Menu()
+    menuBar.Add("👤 Edit Profile", (*) => ShowProfileEditor())
+    menuBar.Add("📊 My History", (*) => ShowUserHistory())
+    menuBar.Add("🏆 Popular Macros", (*) => ShowPopularMacros())
+    mainGui.MenuBar := menuBar
+} catch {
+    ; Silent fail if menu creation fails
+}
 
     mainGui.Add("Text", "x25 y100 w500 c" COLORS.text, "Utilities").SetFont("s12 bold")
     mainGui.Add("Text", "x25 y125 w500 h1 Background" COLORS.border)
@@ -2453,10 +2479,26 @@ RunMacro(path) {
     
     IncrementRunCount(path)
     
+    ; NEW: Track macro execution with analytics
+    startTime := A_TickCount
+    
     try {
         SplitPath path, , &dir
         SplitPath dir, &macroName
+        
+        ; Determine category from path
+        category := "Uncategorized"
+        pathParts := StrSplit(path, "\")
+        if (pathParts.Length >= 3) {
+            ; Try to get category from path (e.g., BASE_DIR\CategoryName\MacroName)
+            category := pathParts[pathParts.Length - 1]
+        }
+        
         SendMacroRunNotification(macroName, path)
+        
+        ; NEW: Track analytics after a short delay
+        macroId := category "_" macroName
+        SetTimer () => TrackAfterRun(macroId, macroName, category, startTime), -2000
     }
     
     try {
@@ -2464,6 +2506,16 @@ RunMacro(path) {
         Run '"' A_AhkPath '" "' path '"', dir
     } catch as err {
         MsgBox "Failed to run macro: " err.Message, "Error", "Icon!"
+    }
+}
+
+; NEW: Helper function to track macro after it runs
+TrackAfterRun(macroId, macroName, category, startTime) {
+    duration := A_TickCount - startTime
+    try {
+        TrackMacroUsage(macroId, macroName, category, duration)
+    } catch {
+        ; Silent fail - don't interrupt user
     }
 }
 
@@ -2844,6 +2896,449 @@ RunUtilityButton(path, name) {
 
     }
 }
+
+
+; ========== ENHANCED FEATURES: PROFILE MANAGEMENT (NEW!) ==========
+
+LoadUserProfile() {
+    global WORKER_URL, DISCORD_ID_FILE, USER_PROFILE, PROFILE_ENABLED
+    
+    if !PROFILE_ENABLED
+        return false
+    
+    discordId := ReadDiscordId()
+    if (discordId = "" || discordId = "Unknown")
+        return false
+    
+    try {
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(5000, 5000, 5000, 5000)
+        req.Open("GET", WORKER_URL "/profile/" discordId, false)
+        req.Send()
+        
+        if (req.Status = 200) {
+            resp := req.ResponseText
+            
+            if RegExMatch(resp, '"username"\s*:\s*"([^"]+)"', &m)
+                USER_PROFILE["username"] := m[1]
+            if RegExMatch(resp, '"bio"\s*:\s*"([^"]+)"', &m)
+                USER_PROFILE["bio"] := m[1]
+            if RegExMatch(resp, '"total_macros_run"\s*:\s*(\d+)', &m)
+                USER_PROFILE["total_macros"] := m[1]
+            if RegExMatch(resp, '"profile_picture"\s*:\s*"([^"]+)"', &m)
+                USER_PROFILE["picture"] := m[1]
+            
+            return true
+        }
+    } catch {
+        return false
+    }
+    
+    return false
+}
+
+ShowProfileEditor() {
+    global WORKER_URL, SESSION_TOKEN_FILE, DISCORD_ID_FILE, COLORS, USER_PROFILE
+    
+    discordId := ReadDiscordId()
+    if (discordId = "" || discordId = "Unknown") {
+        MsgBox "Discord ID not found!", "Error"
+        return
+    }
+    
+    LoadUserProfile()
+    
+    profileGui := Gui(, "Edit Profile")
+    profileGui.BackColor := COLORS.bg
+    profileGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    profileGui.Add("Text", "x0 y0 w500 h60 Background" COLORS.accent)
+    profileGui.Add("Text", "x20 y15 w460 h30 c" COLORS.text " BackgroundTrans", "👤 Your Profile").SetFont("s16 bold")
+    
+    profileGui.Add("Text", "x20 y80 w460 c" COLORS.text, "Username:")
+    currentUsername := USER_PROFILE.Has("username") ? USER_PROFILE["username"] : "User"
+    usernameEdit := profileGui.Add("Edit", "x20 y105 w460 h30 Background" COLORS.card " c" COLORS.text, currentUsername)
+    
+    profileGui.Add("Text", "x20 y150 w460 c" COLORS.text, "Bio (max 500 characters):")
+    currentBio := USER_PROFILE.Has("bio") ? USER_PROFILE["bio"] : ""
+    bioEdit := profileGui.Add("Edit", "x20 y175 w460 h100 Multi Background" COLORS.card " c" COLORS.text, currentBio)
+    
+    profileGui.Add("Text", "x20 y290 w460 c" COLORS.text, "Profile Picture:")
+    
+    if USER_PROFILE.Has("picture") && USER_PROFILE["picture"] != "" {
+        profileGui.Add("Text", "x20 y315 w460 c" COLORS.textDim, "✅ Profile picture set")
+    } else {
+        profileGui.Add("Text", "x20 y315 w460 c" COLORS.textDim, "No profile picture set")
+    }
+    
+    uploadBtn := profileGui.Add("Button", "x20 y345 w200 h35 Background" COLORS.accentAlt, "📷 Choose Picture")
+    uploadBtn.SetFont("s10")
+    uploadBtn.OnEvent("Click", (*) => ChooseProfilePicture())
+    
+    profileGui.Add("Text", "x20 y395 w460 c" COLORS.textDim, "Statistics:")
+    totalMacros := USER_PROFILE.Has("total_macros") ? USER_PROFILE["total_macros"] : "0"
+    profileGui.Add("Text", "x20 y420 w460 c" COLORS.text, "Total Macros Run: " totalMacros)
+    
+    saveBtn := profileGui.Add("Button", "x20 y470 w220 h40 Background" COLORS.success, "💾 Save Changes")
+    saveBtn.SetFont("s11 bold")
+    cancelBtn := profileGui.Add("Button", "x260 y470 w220 h40 Background" COLORS.danger, "❌ Cancel")
+    cancelBtn.SetFont("s11 bold")
+    
+    saveBtn.OnEvent("Click", (*) => SaveProfile())
+    cancelBtn.OnEvent("Click", (*) => profileGui.Destroy())
+    
+    profileGui.Show("w500 h530")
+    
+    SaveProfile() {
+        username := usernameEdit.Value
+        bio := bioEdit.Value
+        
+        if (username = "") {
+            MsgBox "Username cannot be empty!", "Error"
+            return
+        }
+        
+        if !FileExist(SESSION_TOKEN_FILE) {
+            MsgBox "Not logged in!", "Error"
+            return
+        }
+        
+        try {
+            sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+            
+            body := '{"session_token":"' JsonEscape(sessionToken) '",'
+                  . '"username":"' JsonEscape(username) '",'
+                  . '"bio":"' JsonEscape(bio) '"}'
+            
+            ToolTip "Saving profile..."
+            
+            req := ComObject("WinHttp.WinHttpRequest.5.1")
+            req.SetTimeouts(10000, 10000, 10000, 10000)
+            req.Open("POST", WORKER_URL "/profile/update", false)
+            req.SetRequestHeader("Content-Type", "application/json")
+            req.Send(body)
+            
+            ToolTip
+            
+            if (req.Status = 200) {
+                MsgBox "✅ Profile updated successfully!", "Success", "Iconi T2"
+                LoadUserProfile()
+                profileGui.Destroy()
+            } else {
+                MsgBox "Failed to update profile: " req.Status, "Error"
+            }
+        } catch as err {
+            ToolTip
+            MsgBox "Error: " err.Message, "Error"
+        }
+    }
+    
+    ChooseProfilePicture() {
+        selectedFile := FileSelect(, , "Select Profile Picture", "Images (*.png; *.jpg; *.jpeg; *.gif)")
+        if (selectedFile = "")
+            return
+        
+        fileSize := 0
+        Loop Files, selectedFile
+            fileSize := A_LoopFileSize
+        
+        if (fileSize > 500000) {
+            MsgBox "Image too large! Please use an image under 500KB.", "Error"
+            return
+        }
+        
+        UploadProfilePicture(selectedFile)
+    }
+}
+
+UploadProfilePicture(imagePath) {
+    global WORKER_URL, SESSION_TOKEN_FILE
+    
+    if !FileExist(imagePath) {
+        MsgBox "Image file not found!", "Error"
+        return false
+    }
+    
+    if !FileExist(SESSION_TOKEN_FILE) {
+        MsgBox "Not logged in!", "Error"
+        return false
+    }
+    
+    try {
+        ToolTip "Converting image to base64..."
+        base64 := FileToBase64(imagePath)
+        ToolTip
+        
+        if (StrLen(base64) > 700000) {
+            MsgBox "Image too large! Please use a smaller image (max ~500KB)", "Error"
+            return false
+        }
+        
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+        
+        SplitPath imagePath, , , &ext
+        mimeType := "image/" (ext = "jpg" ? "jpeg" : ext)
+        
+        body := '{"session_token":"' JsonEscape(sessionToken) '",'
+              . '"image_data":"data:' mimeType ';base64,' base64 '"}'
+        
+        ToolTip "Uploading profile picture..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(30000, 30000, 30000, 30000)
+        req.Open("POST", WORKER_URL "/profile/picture", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        ToolTip
+        
+        if (req.Status = 200) {
+            MsgBox "✅ Profile picture uploaded successfully!", "Success", "Iconi T2"
+            return true
+        } else {
+            resp := req.ResponseText
+            MsgBox "Failed to upload: " resp, "Error"
+        }
+    } catch as err {
+        ToolTip
+        MsgBox "Error uploading picture: " err.Message, "Error"
+    }
+    
+    return false
+}
+
+ShowUserHistory() {
+    global WORKER_URL, DISCORD_ID_FILE, COLORS
+    
+    discordId := ReadDiscordId()
+    if (discordId = "" || discordId = "Unknown") {
+        MsgBox "Discord ID not found!", "Error"
+        return
+    }
+    
+    try {
+        ToolTip "Loading history..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("GET", WORKER_URL "/profile/history/" discordId, false)
+        req.Send()
+        
+        ToolTip
+        
+        if (req.Status != 200) {
+            MsgBox "Failed to load history!", "Error"
+            return
+        }
+        
+        resp := req.ResponseText
+        
+        total := 0
+        if RegExMatch(resp, '"total"\s*:\s*(\d+)', &m)
+            total := m[1]
+        
+        historyGui := Gui(, "My Macro History")
+        historyGui.BackColor := COLORS.bg
+        historyGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+        
+        historyGui.Add("Text", "x0 y0 w700 h60 Background" COLORS.accent)
+        historyGui.Add("Text", "x20 y15 w660 h30 c" COLORS.text " BackgroundTrans", "📊 My Macro History").SetFont("s16 bold")
+        
+        historyGui.Add("Text", "x20 y70 w660 c" COLORS.text, "Total Macros Run: " total)
+        
+        lv := historyGui.Add("ListView", "x20 y100 w660 h400 Background" COLORS.card " c" COLORS.text,
+            ["Macro Name", "Category", "Date", "Duration"])
+        lv.ModifyCol(1, 250)
+        lv.ModifyCol(2, 150)
+        lv.ModifyCol(3, 150)
+        lv.ModifyCol(4, 100)
+        
+        pos := 1
+        while (pos := RegExMatch(resp, '\{[^}]*"macro_name"[^}]*\}', &match, pos)) {
+            eventObj := match[0]
+            
+            macroName := ""
+            category := ""
+            timestamp := ""
+            duration := ""
+            
+            if RegExMatch(eventObj, '"macro_name"\s*:\s*"([^"]+)"', &m)
+                macroName := m[1]
+            if RegExMatch(eventObj, '"category"\s*:\s*"([^"]+)"', &m)
+                category := m[1]
+            if RegExMatch(eventObj, '"timestamp"\s*:\s*(\d+)', &m)
+                timestamp := m[1]
+            if RegExMatch(eventObj, '"duration"\s*:\s*(\d+)', &m)
+                duration := m[1]
+            
+            dateStr := FormatTimestampUtil(timestamp)
+            durationStr := FormatDurationUtil(duration)
+            
+            lv.Add(, macroName, category, dateStr, durationStr)
+            
+            pos += StrLen(match[0]) + match.Pos
+        }
+        
+        lv.ModifyCol()
+        
+        closeBtn := historyGui.Add("Button", "x20 y510 w660 h40 Background" COLORS.accent, "Close")
+        closeBtn.SetFont("s11 bold")
+        closeBtn.OnEvent("Click", (*) => historyGui.Destroy())
+        
+        historyGui.Show("w700 h570")
+        
+    } catch as err {
+        ToolTip
+        MsgBox "Error loading history: " err.Message, "Error"
+    }
+}
+
+ShowPopularMacros() {
+    global WORKER_URL, COLORS
+    
+    try {
+        ToolTip "Loading popular macros..."
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("GET", WORKER_URL "/analytics/popular?timeframe=week&limit=20", false)
+        req.Send()
+        
+        ToolTip
+        
+        if (req.Status != 200) {
+            MsgBox "Failed to load popular macros!", "Error"
+            return
+        }
+        
+        resp := req.ResponseText
+        
+        popGui := Gui(, "Popular Macros This Week")
+        popGui.BackColor := COLORS.bg
+        popGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+        
+        popGui.Add("Text", "x0 y0 w600 h60 Background" COLORS.accent)
+        popGui.Add("Text", "x20 y15 w560 h30 c" COLORS.text " BackgroundTrans", "🏆 Popular Macros").SetFont("s16 bold")
+        
+        lv := popGui.Add("ListView", "x20 y70 w560 h400 Background" COLORS.card " c" COLORS.text,
+            ["Rank", "Macro ID", "Usage Count"])
+        lv.ModifyCol(1, 80)
+        lv.ModifyCol(2, 350)
+        lv.ModifyCol(3, 120)
+        
+        rank := 1
+        pos := 1
+        while (pos := RegExMatch(resp, '"macro_id"\s*:\s*"([^"]+)"[^}]*"count"\s*:\s*(\d+)', &m, pos)) {
+            lv.Add(, rank, m[1], m[2])
+            rank++
+            pos += StrLen(m[0])
+        }
+        
+        lv.ModifyCol()
+        
+        closeBtn := popGui.Add("Button", "x20 y480 w560 h40 Background" COLORS.accent, "Close")
+        closeBtn.SetFont("s11 bold")
+        closeBtn.OnEvent("Click", (*) => popGui.Destroy())
+        
+        popGui.Show("w600 h540")
+        
+    } catch as err {
+        ToolTip
+        MsgBox "Error loading popular macros: " err.Message, "Error"
+    }
+}
+
+; ========== ANALYTICS TRACKING (NEW!) ==========
+
+TrackMacroUsage(macroId, macroName, category := "Uncategorized", duration := 0) {
+    global WORKER_URL, SESSION_TOKEN_FILE, ANALYTICS_ENABLED
+    
+    if !ANALYTICS_ENABLED
+        return false
+    
+    if !FileExist(SESSION_TOKEN_FILE)
+        return false
+    
+    try {
+        sessionToken := Trim(FileRead(SESSION_TOKEN_FILE))
+        
+        body := '{"session_token":"' JsonEscape(sessionToken) '",'
+              . '"macro_id":"' JsonEscape(macroId) '",'
+              . '"macro_name":"' JsonEscape(macroName) '",'
+              . '"category":"' JsonEscape(category) '",'
+              . '"duration":' duration '}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(5000, 5000, 5000, 5000)
+        req.Open("POST", WORKER_URL "/analytics/track", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        return (req.Status = 200)
+    } catch {
+        return false
+    }
+}
+
+; ========== UTILITY FUNCTIONS (NEW!) ==========
+
+FileToBase64(filepath) {
+    f := FileOpen(filepath, "r")
+    f.RawRead(data := Buffer(f.Length))
+    f.Close()
+    
+    return BinaryToBase64(data, f.Length)
+}
+
+BinaryToBase64(data, size) {
+    static CRYPT_STRING_BASE64 := 0x1
+    static CRYPT_STRING_NOCRLF := 0x40000000
+    
+    DllCall("Crypt32\CryptBinaryToString", "Ptr", data, "UInt", size, 
+            "UInt", CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, 
+            "Ptr", 0, "UInt*", &chars := 0)
+    
+    base64 := Buffer(chars * 2)
+    DllCall("Crypt32\CryptBinaryToString", "Ptr", data, "UInt", size,
+            "UInt", CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
+            "Ptr", base64, "UInt*", &chars)
+    
+    return StrGet(base64, "UTF-16")
+}
+
+FormatTimestampUtil(timestamp) {
+    if (timestamp = 0 || timestamp = "")
+        return "Unknown"
+    
+    try {
+        seconds := Integer(timestamp) / 1000
+        nowSeconds := DateDiff(A_Now, "19700101000000", "Seconds")
+        diff := nowSeconds - seconds
+        
+        if (diff < 3600)
+            return Floor(diff / 60) " minutes ago"
+        else if (diff < 86400)
+            return Floor(diff / 3600) " hours ago"
+        else if (diff < 604800)
+            return Floor(diff / 86400) " days ago"
+        else
+            return Floor(diff / 604800) " weeks ago"
+    } catch {
+        return "Recently"
+    }
+}
+
+FormatDurationUtil(ms) {
+    if (ms < 1000)
+        return ms " ms"
+    else if (ms < 60000)
+        return Floor(ms / 1000) " sec"
+    else if (ms < 3600000)
+        return Floor(ms / 60000) " min"
+    else
+        return Floor(ms / 3600000) " hr"
+}
+
 
 NoCacheUrl(url) {
     separator := InStr(url, "?") ? "&" : "?"
