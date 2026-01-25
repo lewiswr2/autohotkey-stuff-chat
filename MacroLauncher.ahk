@@ -1576,7 +1576,7 @@ ShowRatingsDialog(macroPath, macroInfo) {
     ratingsGui.BackColor := COLORS.bg
     ratingsGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
-    ; Header
+    ; Header with scrollable content
     ratingsGui.Add("Text", "x0 y0 w700 h140 Background" COLORS.card)
     
     ; Like/Dislike stats
@@ -1612,102 +1612,69 @@ ShowRatingsDialog(macroPath, macroInfo) {
     dislikeBtn.SetFont("s11 bold")
     dislikeBtn.OnEvent("Click", (*) => SubmitVote(macroId, "dislike", ratingsGui))
     
-    ; Reviews section
+    ; Reviews section title
     ratingsGui.Add("Text", "x20 y150 w660 c" COLORS.text, "Recent Reviews").SetFont("s12 bold")
     
-    reviewsY := 180
+    ; ========== SCROLLABLE REVIEWS SECTION ==========
+    ; Create a ListView for scrollable reviews
+    reviewsLV := ratingsGui.Add("ListView", "x20 y180 w660 h350 -Hdr Background" COLORS.card " c" COLORS.text, ["Review"])
+    reviewsLV.ModifyCol(1, 640)
     
     if (ratings.reviews.Length = 0) {
-        noReviewText := ratingsGui.Add("Text", "x20 y" reviewsY " w660 h100 c" COLORS.textDim " Center",
-            "No reviews yet. Be the first to leave feedback!")
-        noReviewText.SetFont("s10")
-        reviewsY += 100
+        reviewsLV.Add(, "No reviews yet. Be the first to leave feedback!")
     } else {
-        maxReviews := Min(8, ratings.reviews.Length)
+        maxReviews := Min(50, ratings.reviews.Length)  ; Show up to 50 reviews
         
         Loop maxReviews {
             review := ratings.reviews[A_Index]
             
-            cardHeight := review.comment != "" ? 120 : 80
-            
-            ; Review card background
-            cardBg := ratingsGui.Add("Text", "x20 y" reviewsY " w660 h" cardHeight " Background" COLORS.cardHover)
-            
-            ; Profile picture circle (clickable)
-            profileCircle := ratingsGui.Add("Button", "x35 y" (reviewsY + 10) " w60 h60 Background" COLORS.success " Center", 
-                SubStr(review.username, 1, 1))
-            profileCircle.SetFont("s20 bold c" COLORS.text)
-            
-            ; Make profile clickable
-            reviewDiscordId := review.discord_id
-            profileCircle.OnEvent("Click", (*) => ShowUserProfilePopup(reviewDiscordId))
-            
-            ; Vote icon
+            ; Build review text
             voteIcon := review.vote = "like" ? "👍" : "👎"
-            voteColor := review.vote = "like" ? COLORS.success : COLORS.danger
-            
-            voteBox := ratingsGui.Add("Text", "x100 y" (reviewsY + 15) " w30 h30 Background" voteColor " Center c" COLORS.text, voteIcon)
-            voteBox.SetFont("s14")
-            
-            ; Username (clickable)
-            usernameBtn := ratingsGui.Add("Button", "x140 y" (reviewsY + 10) " w300 h30 Background" COLORS.cardHover, review.username)
-            usernameBtn.SetFont("s11 bold c" COLORS.accentAlt)
-            usernameBtn.OnEvent("Click", (*) => ShowUserProfilePopup(reviewDiscordId))
-            
-            ; Date
+            username := review.username ? review.username : "Anonymous"
             dateStr := FormatTimestamp(review.timestamp)
-            ratingsGui.Add("Text", "x140 y" (reviewsY + 40) " w300 c" COLORS.textDim " BackgroundTrans", dateStr).SetFont("s8")
             
-            ; Comment
-            if (review.comment != "") {
-                commentText := review.comment
-                if (StrLen(commentText) > 150)
-                    commentText := SubStr(commentText, 1, 150) "..."
-                
-                ratingsGui.Add("Text", "x35 y" (reviewsY + 75) " w630 c" COLORS.text " BackgroundTrans",
-                    '"' commentText '"').SetFont("s9")
+            reviewText := voteIcon " " username " • " dateStr
+            
+            if (review.comment && review.comment != "") {
+                reviewText .= "`n" review.comment
             }
             
-            reviewsY += cardHeight + 10
+            reviewsLV.Add(, reviewText)
         }
         
-        if (ratings.reviews.Length > 8) {
-            ratingsGui.Add("Text", "x20 y" reviewsY " w660 c" COLORS.textDim " Center",
-                "Showing 8 of " ratings.reviews.Length " reviews")
-            reviewsY += 30
+        if (ratings.reviews.Length > 50) {
+            reviewsLV.Add(, "`n--- Showing 50 of " ratings.reviews.Length " reviews ---")
         }
     }
     
     ; Close button
-    closeBtn := ratingsGui.Add("Button", "x275 y" (reviewsY + 10) " w150 h40 Background" COLORS.danger, "Close")
+    closeBtn := ratingsGui.Add("Button", "x275 y545 w150 h40 Background" COLORS.danger, "Close")
     closeBtn.SetFont("s10 bold")
     closeBtn.OnEvent("Click", (*) => ratingsGui.Destroy())
     
     ratingsGui.OnEvent("Close", (*) => ratingsGui.Destroy())
-    ratingsGui.Show("w700 h" (reviewsY + 70) " Center")
+    ratingsGui.Show("w700 h600 Center")
 }
 
 ShowUserProfilePopup(discord_id) {
     global COLORS, WORKER_URL
     
     if (!discord_id || discord_id = "") {
-        MsgBox "Profile not available", "Info", "Iconi"
-        return
+        return  ; Silent fail - don't show error
     }
     
-    ; Load public profile
     try {
         ToolTip "Loading profile..."
         
         req := ComObject("WinHttp.WinHttpRequest.5.1")
-        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.SetTimeouts(5000, 5000, 5000, 5000)
         req.Open("GET", WORKER_URL "/profile/public/" discord_id, false)
         req.Send()
         
         ToolTip
         
         if (req.Status != 200) {
-            MsgBox "Profile not found", "Error", "Icon!"
+            ; Silent fail - profile might not exist yet
             return
         }
         
@@ -1719,6 +1686,11 @@ ShowUserProfilePopup(discord_id) {
         totalMacros := JsonExtractAny(resp, "total_macros_run")
         memberSince := JsonExtractAny(resp, "member_since")
         
+        ; If no username found, don't show popup
+        if (!username || username = "") {
+            return
+        }
+        
         ; Create profile popup
         profileGui := Gui("+AlwaysOnTop", username "'s Profile")
         profileGui.BackColor := COLORS.bg
@@ -1727,22 +1699,22 @@ ShowUserProfilePopup(discord_id) {
         ; Header
         profileGui.Add("Text", "x0 y0 w400 h90 Background" COLORS.accent)
         
-        ; Profile picture
-        profilePic := profileGui.Add("Text", "x20 y15 w60 h60 Background" COLORS.success " Center", 
-            SubStr(username, 1, 1))
+        ; Profile picture (use initial letter)
+        initial := SubStr(username, 1, 1)
+        profilePic := profileGui.Add("Text", "x20 y15 w60 h60 Background" COLORS.success " Center", initial)
         profilePic.SetFont("s24 bold c" COLORS.text)
         
         ; Username
         profileGui.Add("Text", "x95 y25 w285 c" COLORS.text " BackgroundTrans", username).SetFont("s14 bold")
         
         ; Member since
-        memberStr := FormatTimestampUtil(memberSince)
+        memberStr := memberSince ? FormatTimestampUtil(memberSince) : "Recently"
         profileGui.Add("Text", "x95 y55 w285 c" COLORS.textDim " BackgroundTrans", "Member since: " memberStr).SetFont("s8")
         
         ; Bio section
         profileGui.Add("Text", "x20 y100 w360 c" COLORS.text, "Bio:").SetFont("s10 bold")
         
-        bioText := bio != "" ? bio : "No bio yet"
+        bioText := (bio && bio != "") ? bio : "No bio yet"
         bioDisplay := profileGui.Add("Text", "x20 y125 w360 h80 Background" COLORS.card, " " bioText)
         bioDisplay.SetFont("s9")
         
@@ -1751,7 +1723,9 @@ ShowUserProfilePopup(discord_id) {
         
         profileGui.Add("Text", "x20 y245 w360 h60 Background" COLORS.card)
         profileGui.Add("Text", "x30 y255 w340 c" COLORS.text " BackgroundTrans", "📊 Total Macros Run:").SetFont("s9")
-        profileGui.Add("Text", "x30 y280 w340 c" COLORS.accent " BackgroundTrans", totalMacros).SetFont("s14 bold")
+        
+        macroCount := totalMacros ? totalMacros : "0"
+        profileGui.Add("Text", "x30 y280 w340 c" COLORS.accent " BackgroundTrans", macroCount).SetFont("s14 bold")
         
         ; Close button
         closeBtn := profileGui.Add("Button", "x125 y320 w150 h40 Background" COLORS.danger, "Close")
@@ -1763,7 +1737,7 @@ ShowUserProfilePopup(discord_id) {
         
     } catch as err {
         ToolTip
-        MsgBox "Error loading profile: " err.Message, "Error", "Icon!"
+        ; Silent fail - don't annoy users with error messages
     }
 }
 
