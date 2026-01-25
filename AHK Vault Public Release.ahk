@@ -23,6 +23,7 @@ global HWID_BAN_FILE := ""
 global MACHINE_BAN_FILE := ""
 global HWID_BINDING_FILE := ""
 global USERNAME_FILE := ""
+global ACCESS_KEY_FILE := ""
 
 ; Login Settings
 global MAX_ATTEMPTS := 10
@@ -93,7 +94,8 @@ InitializeSecureVault() {
     HWID_BAN_FILE := SECURE_VAULT "\banned_hwids.txt"
     MACHINE_BAN_FILE := SECURE_VAULT "\.machine_banned"
     HWID_BINDING_FILE := SECURE_VAULT "\.hwid_bind"
-    
+    ACCESS_KEY_FILE := SECURE_VAULT "\.access_key"
+
     ; ========== IMPROVED: Create all directories with better error handling ==========
     try {
         ; Create main directories
@@ -146,15 +148,59 @@ InitializeSecureVault() {
     }
 }
 
+VerifyGlobalKeyQuiet(key) {
+    global WORKER_URL
+    
+    try {
+        body := '{"key":"' JsonEscape(key) '"}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(10000, 10000, 10000, 10000)
+        req.Open("POST", WORKER_URL "/auth/check-key", false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(body)
+        
+        if (req.Status = 200) {
+            resp := req.ResponseText
+            if RegExMatch(resp, '"valid"\s*:\s*true') {
+                return true
+            }
+        }
+        
+        return false
+        
+    } catch {
+        return false
+    }
+}
+
 CheckGlobalKey() {
-    global WORKER_URL, COLORS
+    global WORKER_URL, COLORS, ACCESS_KEY_FILE
+    
+    ; Check if key is already saved
+    if FileExist(ACCESS_KEY_FILE) {
+        try {
+            savedKey := Trim(FileRead(ACCESS_KEY_FILE, "UTF-8"))
+            if (savedKey != "") {
+                ; Verify the saved key is still valid
+                if VerifyGlobalKeyQuiet(savedKey) {
+                    return true
+                } else {
+                    ; Saved key is invalid, delete it
+                    try FileDelete ACCESS_KEY_FILE
+                }
+            }
+        } catch {
+            ; Error reading saved key, continue to prompt
+        }
+    }
     
     keyGui := Gui("+AlwaysOnTop -MinimizeBox -MaximizeBox", "AHK Vault - Access Key")
     keyGui.BackColor := COLORS.bg
     keyGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
     keyGui.Add("Text", "x0 y0 w500 h80 Background" COLORS.accent)
-    keyGui.Add("Text", "x20 y20 w460 h30 c" COLORS.text " BackgroundTrans", "🔐 Enter Access Key").SetFont("s16 bold")
+    keyGui.Add("Text", "x20 y20 w460 h30 c" COLORS.text " BackgroundTrans", "🔑 Enter Access Key").SetFont("s16 bold")
     
     keyGui.Add("Text", "x25 y100 w450 h200 Background" COLORS.card)
     
@@ -196,7 +242,7 @@ VerifyKeyAndContinue(keyEdit, statusText, &keyValid, keyGui) {
 }
 
 VerifyGlobalKey(key, statusControl) {
-    global WORKER_URL
+    global WORKER_URL, ACCESS_KEY_FILE, SECURE_VAULT
     
     try {
         body := '{"key":"' JsonEscape(key) '"}'
@@ -214,6 +260,36 @@ VerifyGlobalKey(key, statusControl) {
         if (req.Status = 200) {
             resp := req.ResponseText
             if RegExMatch(resp, '"valid"\s*:\s*true') {
+                ; Save the valid key
+                try {
+                    ; Ensure directory exists
+                    if !DirExist(SECURE_VAULT) {
+                        DirCreate SECURE_VAULT
+                    }
+                    
+                    ; Delete old key file if exists
+                    if FileExist(ACCESS_KEY_FILE) {
+                        try {
+                            FileSetAttrib "-H -S -R", ACCESS_KEY_FILE
+                            FileDelete ACCESS_KEY_FILE
+                        } catch {
+                            ; Ignore deletion errors
+                        }
+                    }
+                    
+                    ; Save the key
+                    FileAppend key, ACCESS_KEY_FILE, "UTF-8"
+                    
+                    ; Hide the file
+                    try {
+                        Run 'attrib +h +s "' ACCESS_KEY_FILE '"', , "Hide"
+                    } catch {
+                        ; Ignore attribute errors
+                    }
+                } catch {
+                    ; Failed to save key, but still allow access
+                }
+                
                 return true
             }
         }
