@@ -2,7 +2,7 @@
 #SingleInstance Force
 #NoTrayIcon
 
-global LAUNCHER_VERSION := "1.0.2"
+global LAUNCHER_VERSION := "1.0.1"
 
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
 global DISCORD_URL := "https://discord.gg/PQ85S32Ht8"
