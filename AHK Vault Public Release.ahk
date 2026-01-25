@@ -327,9 +327,9 @@ CreateRegistrationGui() {
 }
 
 AttemptRegistration(username, password, confirmPass, discordId, statusControl, gui) {
-    global WORKER_URL, SESSION_TOKEN_FILE, SECURE_VAULT
+    global WORKER_URL, SESSION_TOKEN_FILE, DISCORD_ID_FILE, SECURE_VAULT
     
-    ; ========== ADD THIS: Ensure secure vault exists ==========
+    ; ✅ CRITICAL: Ensure secure vault exists BEFORE saving anything
     if !DirExist(SECURE_VAULT) {
         try {
             DirCreate SECURE_VAULT
@@ -397,89 +397,64 @@ AttemptRegistration(username, password, confirmPass, discordId, statusControl, g
         if (req.Status = 200) {
             resp := req.ResponseText
             
-            if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &match) {
-                sessionToken := match[1]
-                
-                ; ========== FIXED SESSION SAVING ==========
+            ; ✅ FIX: Extract ALL data from response
+            sessionToken := ""
+            returnedDiscordId := ""
+            returnedUsername := ""
+            
+            if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &m1)
+                sessionToken := m1[1]
+            if RegExMatch(resp, '"discord_id"\s*:\s*"([^"]+)"', &m2)
+                returnedDiscordId := m2[1]
+            if RegExMatch(resp, '"username"\s*:\s*"([^"]+)"', &m3)
+                returnedUsername := m3[1]
+            
+            ; ✅ CRITICAL: Save session token FIRST
+            if (sessionToken != "") {
                 try {
-                    ; Ensure directory exists
-                    SplitPath SESSION_TOKEN_FILE, , &sessionDir
-                    if !DirExist(sessionDir) {
-                        DirCreate sessionDir
-                    }
-                    
-                    ; Delete old session if exists
-                    if FileExist(SESSION_TOKEN_FILE) {
-                        try {
-                            FileSetAttrib "-H -S -R", SESSION_TOKEN_FILE
-                            FileDelete SESSION_TOKEN_FILE
-                        } catch {
-                            ; Ignore deletion errors
-                        }
-                    }
-                    
-                    ; Save new session
-                    FileAppend sessionToken, SESSION_TOKEN_FILE, "UTF-8"
-                    
-                    ; Verify file was created
-                    if !FileExist(SESSION_TOKEN_FILE) {
-                        throw Error("Session file was not created")
-                    }
-                    
-                    ; Hide the file (non-critical, don't fail on error)
-                    try {
-                        Run 'attrib +h +s "' SESSION_TOKEN_FILE '"', , "Hide"
-                    } catch {
-                        ; Ignore attribute errors
-                    }
-                    
+                    SaveSessionToken(sessionToken)
                 } catch as err {
                     statusControl.Value := "❌ Failed to save session"
-                    MsgBox(
-                        "Session save error:`n`n" 
-                        . "Error: " err.Message "`n"
-                        . "Path: " SESSION_TOKEN_FILE "`n"
-                        . "Directory exists: " (DirExist(sessionDir) ? "Yes" : "No"),
-                        "Session Error",
-                        "Icon!"
-                    )
+                    MsgBox "Session save error: " err.Message, "Error", "Icon!"
                     return false
                 }
-                try {
-    if !DirExist(SECURE_VAULT)
-        DirCreate SECURE_VAULT
-    
-    SplitPath DISCORD_ID_FILE, , &discordDir
-    if !DirExist(discordDir)
-        DirCreate discordDir
-    
-    if FileExist(DISCORD_ID_FILE) {
-        try {
-            FileSetAttrib "-H -S -R", DISCORD_ID_FILE
-            FileDelete DISCORD_ID_FILE
-        }
-    }
-    
-    FileAppend discordId, DISCORD_ID_FILE, "UTF-8"
-    
-    try {
-        Run 'attrib +h +s "' DISCORD_ID_FILE '"', , "Hide"
-    }
-} catch as err {
-    MsgBox "Warning: Failed to save Discord ID locally: " err.Message, "Warning", "Icon!"
-}
-                ; Save username locally
-                SaveUsername(username)
-                
-                statusControl.Value := "✅ Account created!"
-                SoundBeep(1000, 100)
-                
-                MsgBox "✅ Account created successfully!`n`nWelcome to AHK Vault, " username "!", 
-                    "Registration Complete", "Iconi T2"
-                
-                gui.Destroy()
-                return true
+            } else {
+                statusControl.Value := "❌ No session token received"
+                return false
             }
+            
+            ; ✅ CRITICAL: Save Discord ID immediately
+            discordIdToSave := (returnedDiscordId != "") ? returnedDiscordId : discordId
+            if !SaveDiscordId(discordIdToSave) {
+                statusControl.Value := "❌ Failed to save Discord ID"
+                MsgBox "Warning: Discord ID not saved. You may need to re-login.", "Warning", "Icon!"
+            }
+            
+            ; ✅ CRITICAL: Save username
+            usernameToSave := (returnedUsername != "") ? returnedUsername : username
+            if !SaveUsername(usernameToSave) {
+                MsgBox "Warning: Username not saved locally.", "Warning", "Icon!"
+            }
+            
+            ; ✅ VERIFICATION: Confirm files were created
+            if !FileExist(SESSION_TOKEN_FILE) {
+                MsgBox "ERROR: Session file not created!`n`nPath: " SESSION_TOKEN_FILE, "Critical Error", "Icon!"
+                return false
+            }
+            
+            if !FileExist(DISCORD_ID_FILE) {
+                MsgBox "ERROR: Discord ID file not created!`n`nPath: " DISCORD_ID_FILE, "Critical Error", "Icon!"
+                return false
+            }
+            
+            statusControl.Value := "✅ Account created!"
+            SoundBeep(1000, 100)
+            
+            MsgBox "✅ Account created successfully!`n`nWelcome to AHK Vault, " usernameToSave "!", 
+                "Registration Complete", "Iconi T2"
+            
+            gui.Destroy()
+            return true
         } else if (req.Status = 409) {
             statusControl.Value := "❌ Username already taken"
             SoundBeep(500, 200)
@@ -543,9 +518,9 @@ CreateEnhancedLoginGui() {
 }
 
 AttemptEnhancedLogin(username, password, statusControl, gui) {
-    global SESSION_TOKEN_FILE, WORKER_URL, SECURE_VAULT
+    global SESSION_TOKEN_FILE, DISCORD_ID_FILE, WORKER_URL, SECURE_VAULT
     
-    ; ========== ADD THIS: Ensure secure vault exists ==========
+    ; ✅ CRITICAL: Ensure secure vault exists
     if !DirExist(SECURE_VAULT) {
         try {
             DirCreate SECURE_VAULT
@@ -581,64 +556,67 @@ AttemptEnhancedLogin(username, password, statusControl, gui) {
         if (req.Status = 200) {
             resp := req.ResponseText
             
-            if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &match) {
-                sessionToken := match[1]
-                
-                ; ========== FIXED SESSION SAVING ==========
-                try {
-                    ; Ensure directory exists
-                    SplitPath SESSION_TOKEN_FILE, , &sessionDir
-                    if !DirExist(sessionDir) {
-                        DirCreate sessionDir
-                    }
-                    
-                    ; Delete old session if exists
-                    if FileExist(SESSION_TOKEN_FILE) {
-                        try {
-                            FileSetAttrib "-H -S -R", SESSION_TOKEN_FILE
-                            FileDelete SESSION_TOKEN_FILE
-                        } catch {
-                            ; Ignore deletion errors
-                        }
-                    }
-                    
-                    ; Save new session
-                    FileAppend sessionToken, SESSION_TOKEN_FILE, "UTF-8"
-                    
-                    ; Verify file was created
-                    if !FileExist(SESSION_TOKEN_FILE) {
-                        throw Error("Session file was not created")
-                    }
-                    
-                    ; Hide the file (non-critical, don't fail on error)
-                    try {
-                        Run 'attrib +h +s "' SESSION_TOKEN_FILE '"', , "Hide"
-                    } catch {
-                        ; Ignore attribute errors
-                    }
-                    
-                } catch as err {
-                    statusControl.Value := "Failed to save session"
-                    MsgBox(
-                        "Session save error:`n`n" 
-                        . "Error: " err.Message "`n"
-                        . "Path: " SESSION_TOKEN_FILE,
-                        "Session Error",
-                        "Icon!"
-                    )
-                    return
-                }
-                
-                statusControl.Value := "✅ Login successful!"
-                SoundBeep(1000, 100)
-                
-                SaveUsername(username)
-                
-                gui.Destroy()
-                StartSessionWatchdog()
-                LaunchMainApp()
+            ; ✅ FIX: Extract ALL data from response
+            sessionToken := ""
+            discordId := ""
+            returnedUsername := ""
+            
+            if RegExMatch(resp, '"session_token"\s*:\s*"([^"]+)"', &m1)
+                sessionToken := m1[1]
+            if RegExMatch(resp, '"discord_id"\s*:\s*"([^"]+)"', &m2)
+                discordId := m2[1]
+            if RegExMatch(resp, '"username"\s*:\s*"([^"]+)"', &m3)
+                returnedUsername := m3[1]
+            
+            if (sessionToken = "") {
+                statusControl.Value := "❌ No session token received"
                 return
             }
+            
+            if (discordId = "") {
+                statusControl.Value := "❌ No Discord ID received"
+                MsgBox "Server did not return Discord ID!`n`nPlease contact support.", "Error", "Icon!"
+                return
+            }
+            
+            ; ✅ CRITICAL: Save session token
+            try {
+                SaveSessionToken(sessionToken)
+            } catch as err {
+                statusControl.Value := "Failed to save session"
+                MsgBox "Session save error: " err.Message, "Error", "Icon!"
+                return
+            }
+            
+            ; ✅ CRITICAL: Save Discord ID
+            if !SaveDiscordId(discordId) {
+                statusControl.Value := "Failed to save Discord ID"
+                MsgBox "Critical error: Could not save Discord ID!", "Error", "Icon!"
+                return
+            }
+            
+            ; ✅ CRITICAL: Save username
+            usernameToSave := (returnedUsername != "") ? returnedUsername : username
+            SaveUsername(usernameToSave)
+            
+            ; ✅ VERIFICATION: Confirm files exist
+            if !FileExist(SESSION_TOKEN_FILE) {
+                MsgBox "ERROR: Session file not created!", "Critical Error", "Icon!"
+                return
+            }
+            
+            if !FileExist(DISCORD_ID_FILE) {
+                MsgBox "ERROR: Discord ID file not created!", "Critical Error", "Icon!"
+                return
+            }
+            
+            statusControl.Value := "✅ Login successful!"
+            SoundBeep(1000, 100)
+            
+            gui.Destroy()
+            StartSessionWatchdog()
+            LaunchMainApp()
+            return
         } else if (req.Status = 401) {
             statusControl.Value := "❌ Invalid username or password"
             SoundBeep(700, 120)
@@ -653,6 +631,130 @@ AttemptEnhancedLogin(username, password, statusControl, gui) {
     } catch as err {
         statusControl.Value := "❌ Connection error: " err.Message
         SoundBeep(500, 200)
+    }
+}
+
+SaveSessionToken(token) {
+    global SESSION_TOKEN_FILE, SECURE_VAULT
+    
+    try {
+        ; Ensure directory exists
+        if !DirExist(SECURE_VAULT) {
+            DirCreate SECURE_VAULT
+        }
+        
+        ; Delete old session if exists
+        if FileExist(SESSION_TOKEN_FILE) {
+            try {
+                FileSetAttrib "-H -S -R", SESSION_TOKEN_FILE
+                FileDelete SESSION_TOKEN_FILE
+            } catch {
+                ; Ignore deletion errors
+            }
+        }
+        
+        ; Save new session
+        FileAppend token, SESSION_TOKEN_FILE, "UTF-8"
+        
+        ; Verify file was created
+        if !FileExist(SESSION_TOKEN_FILE) {
+            throw Error("Session file was not created")
+        }
+        
+        ; Hide the file (non-critical)
+        try {
+            Run 'attrib +h +s "' SESSION_TOKEN_FILE '"', , "Hide"
+        } catch {
+            ; Ignore attribute errors
+        }
+        
+        return true
+    } catch as err {
+        MsgBox "Session save error: " err.Message "`n`nPath: " SESSION_TOKEN_FILE, "Error", "Icon!"
+        return false
+    }
+}
+
+SaveDiscordId(discordId) {
+    global DISCORD_ID_FILE, SECURE_VAULT
+    
+    try {
+        ; Ensure directory exists
+        if !DirExist(SECURE_VAULT) {
+            DirCreate SECURE_VAULT
+        }
+        
+        ; Get directory path
+        SplitPath DISCORD_ID_FILE, , &discordDir
+        if !DirExist(discordDir) {
+            DirCreate discordDir
+        }
+        
+        ; Delete old file if exists
+        if FileExist(DISCORD_ID_FILE) {
+            try {
+                FileSetAttrib "-H -S -R", DISCORD_ID_FILE
+                FileDelete DISCORD_ID_FILE
+            } catch {
+                ; Ignore deletion errors
+            }
+        }
+        
+        ; Save Discord ID
+        FileAppend discordId, DISCORD_ID_FILE, "UTF-8"
+        
+        ; Verify file was created
+        if !FileExist(DISCORD_ID_FILE) {
+            throw Error("Discord ID file was not created")
+        }
+        
+        ; Hide the file (non-critical)
+        try {
+            Run 'attrib +h +s "' DISCORD_ID_FILE '"', , "Hide"
+        } catch {
+            ; Ignore attribute errors
+        }
+        
+        return true
+    } catch as err {
+        MsgBox "Discord ID save error: " err.Message "`n`nPath: " DISCORD_ID_FILE, "Error", "Icon!"
+        return false
+    }
+}
+
+SaveUsername(username) {
+    global USERNAME_FILE, SECURE_VAULT
+    
+    try {
+        ; Ensure secure vault exists
+        if !DirExist(SECURE_VAULT) {
+            DirCreate SECURE_VAULT
+        }
+        
+        ; Delete old username file if exists
+        if FileExist(USERNAME_FILE) {
+            try {
+                FileSetAttrib "-H -S -R", USERNAME_FILE
+                FileDelete USERNAME_FILE
+            } catch {
+                ; Ignore deletion errors
+            }
+        }
+        
+        ; Save username
+        FileAppend username, USERNAME_FILE, "UTF-8"
+        
+        ; Hide the file (non-critical)
+        try {
+            Run 'attrib +h +s "' USERNAME_FILE '"', , "Hide"
+        } catch {
+            ; Ignore attribute errors
+        }
+        
+        return true
+    } catch as err {
+        MsgBox "Username save error: " err.Message, "Warning", "Icon!"
+        return false
     }
 }
 
@@ -701,40 +803,54 @@ ReadUsername() {
     return ""
 }
 
-SaveUsername(username) {
-    global USERNAME_FILE, SECURE_VAULT
+ReadDiscordId() {
+    global DISCORD_ID_FILE, SESSION_TOKEN_FILE, WORKER_URL
     
+    ; Try reading from local file first
     try {
-        ; Ensure secure vault exists
-        if !DirExist(SECURE_VAULT) {
-            DirCreate SECURE_VAULT
-        }
-        
-        ; Delete old username file if exists
-        if FileExist(USERNAME_FILE) {
-            try {
-                FileSetAttrib "-H -S -R", USERNAME_FILE
-                FileDelete USERNAME_FILE
-            } catch {
-                ; Ignore deletion errors
+        if FileExist(DISCORD_ID_FILE) {
+            discordId := Trim(FileRead(DISCORD_ID_FILE, "UTF-8"))
+            if (discordId != "" && RegExMatch(discordId, "^\d{6,30}$")) {
+                return discordId
             }
         }
-        
-        ; Save username
-        FileAppend username, USERNAME_FILE, "UTF-8"
-        
-        ; Hide the file (non-critical)
-        try {
-            Run 'attrib +h +s "' USERNAME_FILE '"', , "Hide"
-        } catch {
-            ; Ignore attribute errors
-        }
-        
-        return true
-    } catch as err {
-        MsgBox "Failed to save username: " err.Message, "Warning", "Icon!"
-        return false
+    } catch {
     }
+    
+    ; ✅ FALLBACK: Try getting from session token
+    try {
+        if FileExist(SESSION_TOKEN_FILE) {
+            sessionToken := Trim(FileRead(SESSION_TOKEN_FILE, "UTF-8"))
+            
+            if (sessionToken != "") {
+                body := '{"session_token":"' JsonEscape(sessionToken) '"}'
+                
+                req := ComObject("WinHttp.WinHttpRequest.5.1")
+                req.SetTimeouts(10000, 10000, 10000, 10000)
+                req.Open("POST", WORKER_URL "/auth/get-discord-id", false)
+                req.SetRequestHeader("Content-Type", "application/json")
+                req.Send(body)
+                
+                if (req.Status = 200) {
+                    resp := req.ResponseText
+                    if RegExMatch(resp, '"discord_id"\s*:\s*"([^"]+)"', &m) {
+                        discordId := m[1]
+                        
+                        ; ✅ Save it locally for next time
+                        try {
+                            SaveDiscordId(discordId)
+                        } catch {
+                        }
+                        
+                        return discordId
+                    }
+                }
+            }
+        }
+    } catch {
+    }
+    
+    return "Unknown"
 }
 
 PromptUsernameSetup() {
@@ -1562,13 +1678,6 @@ PromptDiscordIdGui() {
     }
     
     return resultId
-}
-
-ReadDiscordId() {
-    global DISCORD_ID_FILE
-    try if FileExist(DISCORD_ID_FILE)
-        return Trim(FileRead(DISCORD_ID_FILE, "UTF-8"))
-    return ""
 }
 
 DebugBanCheck() {
