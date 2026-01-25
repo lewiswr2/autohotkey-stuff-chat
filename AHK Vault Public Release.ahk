@@ -2,7 +2,7 @@
 #SingleInstance Force
 #NoTrayIcon
 
-global LAUNCHER_VERSION := "1.0.2"
+global LAUNCHER_VERSION := "1.0.3"
 
 ; ================= AUTHENTICATION GLOBALS =================
 global WORKER_URL := "https://empty-band-2be2.lewisjenkins558.workers.dev"
@@ -2342,4 +2342,5 @@ LaunchMainApp() {
         ), "Launch Error", "Icon!"
         ExitApp
     }
+
 }
