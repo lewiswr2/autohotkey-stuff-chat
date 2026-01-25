@@ -57,6 +57,7 @@ global COLORS := {
 }
 
 ; =========================================
+InitializeSecureVault()
 CheckLoginAppUpdate()
 LoadWebhookUrl()
 CheckLockout()
