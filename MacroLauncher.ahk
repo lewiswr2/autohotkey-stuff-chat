@@ -3302,9 +3302,28 @@ ShowChangelog(*) {
 ; ========== HELPER FUNCTIONS ==========
 
 TryDirMove(src, dst, overwrite := true, retries := 10) {
+    ; FIX: Ensure destination parent directory exists
+    try {
+        SplitPath dst, , &parentDir
+        if (parentDir != "" && !DirExist(parentDir)) {
+            DirCreate parentDir
+        }
+    } catch {
+        ; If we can't create parent, DirMove will fail anyway
+    }
+    
+    ; If destination exists and we want to overwrite, delete it first
+    if (DirExist(dst) && overwrite) {
+        try {
+            DirDelete dst, true
+        } catch {
+            ; Ignore deletion errors
+        }
+    }
+    
     loop retries {
         try {
-            DirMove src, dst, overwrite ? 1 : 0
+            DirMove src, dst, overwrite ? 2 : 0
             return true
         } catch as err {
             Sleep 250
@@ -3316,6 +3335,16 @@ TryDirMove(src, dst, overwrite := true, retries := 10) {
 }
 
 TryFileCopy(src, dst, overwrite := true, retries := 10) {
+    ; FIX: Ensure destination parent directory exists
+    try {
+        SplitPath dst, , &parentDir
+        if (parentDir != "" && !DirExist(parentDir)) {
+            DirCreate parentDir
+        }
+    } catch {
+        ; If we can't create parent, FileCopy will fail anyway
+    }
+    
     loop retries {
         try {
             FileCopy src, dst, overwrite ? 1 : 0
