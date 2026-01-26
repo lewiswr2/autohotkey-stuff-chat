@@ -2342,5 +2342,4 @@ LaunchMainApp() {
         ), "Launch Error", "Icon!"
         ExitApp
     }
-
 }
