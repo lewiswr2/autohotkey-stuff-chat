@@ -2867,10 +2867,13 @@ GetMacrosWithInfo(category, sortBy := "favorites") {
             if FileExist(mainFile) {
                 try {
                     info := ReadMacroInfo(subFolder)
-                    out.Push({
-                        path: mainFile,
-                        info: info
-                    })
+                    ; ✅ FILTER: Only add macro if Released is not "No"
+                    if (StrLower(info.Released) != "no") {
+                        out.Push({
+                            path: mainFile,
+                            info: info
+                        })
+                    }
                 }
             }
         }
@@ -2881,10 +2884,13 @@ GetMacrosWithInfo(category, sortBy := "favorites") {
         if FileExist(mainFile) {
             try {
                 info := ReadMacroInfo(base)
-                out.Push({
-                    path: mainFile,
-                    info: info
-                })
+                ; ✅ FILTER: Only add macro if Released is not "No"
+                if (StrLower(info.Released) != "no") {
+                    out.Push({
+                        path: mainFile,
+                        info: info
+                    })
+                }
             }
         }
     }
@@ -3074,7 +3080,8 @@ ReadMacroInfo(macroDir) {
         Title: "",
         Creator: "",
         Version: "",
-        Links: ""
+        Links: "",
+        Released: "Yes"  ; Default to Yes if not specified
     }
     
     try {
@@ -3120,6 +3127,8 @@ ReadMacroInfo(macroDir) {
                 info.Version := v
             case "links":
                 info.Links := v
+            case "released":
+                info.Released := v
         }
     }
     
