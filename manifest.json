@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "launcher_version": "1.0.3",
   "admin_version": "1.0.3",
   "admin_update_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Admin.ahk",
@@ -12,7 +12,10 @@
   "password_hash": "1849087399",
   "cred_user": "AHKvaultmacros@discord",
   "cred_hash": "1849087399",
-  "banned_discord_ids": [],
+  "banned_discord_ids": [
+    "1449164940236816514",
+    "592481677062832148"
+  ],
   "admin_discord_ids": [
     "1247055057489231914",
     "886398974456655892"
@@ -35,14 +38,7 @@
     "992980380267323432": "358851400"
   },
   "changelog": [
-    "🆕 Added a brand new Islands section",
-    "🤖 Added Islands Auto Vending Macro",
-    "🎣 Added Pet Sim 99 Multi Deep Fishing macro",
-    "🛠️ Added 3 new utility tools",
-    "🔤 Restored original Roblox fonts",
-    "🎨 Added font changing support",
-    "🖱️ Added built-in Auto Clicker",
-    "🖥️ Completely redesigned macro UI for better usability",
-    "🌲 Updated Rebirth Champions Ultimate wood macro from Ultimate Wood to Royal Wood"
+    "⬆️Added The Level Up Macro",
+    "🛑Added An Anti Afk macro"
   ]
 }
