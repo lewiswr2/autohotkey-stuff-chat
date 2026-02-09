@@ -20,7 +20,7 @@ global mainGui := 0
 global MACHINE_KEY := ""
 global DISCORD_ID_FILE := ""
 global RATINGS_CACHE := Map()
-
+    global STAFF_SESSION_FILE := ""
 ; ================= NEW: ENHANCED FEATURES =================
 global PROFILE_ENABLED := true
 global ANALYTICS_ENABLED := true
@@ -90,22 +90,25 @@ SetTaskbarIcon() {
 ; ========== INITIALIZATION ==========
 InitializeSecureVault() {
     global APP_DIR, SECURE_VAULT, BASE_DIR, ICON_DIR, VERSION_FILE, MACHINE_KEY
-    global STATS_FILE, FAVORITES_FILE, MANIFEST_URL, SESSION_TOKEN_FILE, DISCORD_ID_FILE
-    
+    global STATS_FILE, FAVORITES_FILE, MANIFEST_URL, SESSION_TOKEN_FILE
+    global DISCORD_ID_FILE, STAFF_SESSION_FILE, USERNAME_FILE
+
     MACHINE_KEY := GetOrCreatePersistentKey()
     dirHash := HashString(MACHINE_KEY . A_ComputerName)
+
     APP_DIR := A_AppData "\..\LocalLow\Microsoft\CryptNetUrlCache\Content\{" SubStr(dirHash, 1, 8) "}"
     SECURE_VAULT := APP_DIR "\{" SubStr(dirHash, 9, 8) "}"
     BASE_DIR := SECURE_VAULT "\dat"
     ICON_DIR := SECURE_VAULT "\res"
+
     VERSION_FILE := SECURE_VAULT "\~ver.tmp"
     STATS_FILE := SECURE_VAULT "\stats.json"
     FAVORITES_FILE := SECURE_VAULT "\favorites.json"
     DISCORD_ID_FILE := SECURE_VAULT "\discord_id.txt"
     SESSION_TOKEN_FILE := SECURE_VAULT "\.session_token"
     USERNAME_FILE := SECURE_VAULT "\username.txt"
-    MANIFEST_URL := DecryptManifestUrl()
-    LoadWebhookUrl()
+
+    ; ✅ CREATE DIRECTORIES FIRST
     try {
         DirCreate APP_DIR
         DirCreate SECURE_VAULT
@@ -113,11 +116,23 @@ InitializeSecureVault() {
         DirCreate ICON_DIR
     } catch as err {
         MsgBox "Failed to create application directories: " err.Message, "Initialization Error", "Icon!"
+        ExitApp
     }
+
+    ; ✅ NOW initialize staff session path
+    InitializeStaffSession()
+
+
+    MANIFEST_URL := DecryptManifestUrl()
+    LoadWebhookUrl()
 
     SendLaunchNotification()
     EnsureVersionFile()
+
+    ; ✅ Load staff session AFTER everything exists
+    LoadStaffSessionOnStartup()
 }
+
 
 GetOrCreatePersistentKey() {
     regPath := "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\SessionInfo"
@@ -3810,28 +3825,66 @@ TrackMacroUsage(macroId, macroName, category := "Uncategorized", duration := 0) 
 
 ; ========== UTILITY FUNCTIONS (NEW!) ==========
 
+; ========== IMPROVED FILE TO BASE64 CONVERSION ==========
+
 FileToBase64(filepath) {
-    f := FileOpen(filepath, "r")
-    f.RawRead(data := Buffer(f.Length))
-    f.Close()
+    if !FileExist(filepath)
+        return ""
     
-    return BinaryToBase64(data, f.Length)
+    try {
+        ; Open file in binary mode
+        file := FileOpen(filepath, "r")
+        if !file
+            return ""
+        
+        ; Get file size
+        fileSize := file.Length
+        
+        ; Read binary data into buffer
+        buffer := Buffer(fileSize)
+        bytesRead := file.RawRead(buffer, fileSize)
+        file.Close()
+        
+        if (bytesRead != fileSize)
+            return ""
+        
+        ; Convert to base64
+        return BinaryToBase64(buffer, fileSize)
+    } catch as err {
+        return ""
+    }
 }
 
-BinaryToBase64(data, size) {
+BinaryToBase64(buffer, size) {
     static CRYPT_STRING_BASE64 := 0x1
     static CRYPT_STRING_NOCRLF := 0x40000000
     
-    DllCall("Crypt32\CryptBinaryToString", "Ptr", data, "UInt", size, 
+    try {
+        ; Calculate required buffer size
+        if !DllCall("Crypt32\CryptBinaryToString", 
+            "Ptr", buffer, 
+            "UInt", size, 
             "UInt", CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, 
-            "Ptr", 0, "UInt*", &chars := 0)
-    
-    base64 := Buffer(chars * 2)
-    DllCall("Crypt32\CryptBinaryToString", "Ptr", data, "UInt", size,
+            "Ptr", 0, 
+            "UInt*", &chars := 0)
+            return ""
+        
+        ; Allocate output buffer
+        outBuffer := Buffer(chars * 2, 0)
+        
+        ; Convert to base64
+        if !DllCall("Crypt32\CryptBinaryToString", 
+            "Ptr", buffer, 
+            "UInt", size,
             "UInt", CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
-            "Ptr", base64, "UInt*", &chars)
-    
-    return StrGet(base64, "UTF-16")
+            "Ptr", outBuffer, 
+            "UInt*", &chars)
+            return ""
+        
+        return StrGet(outBuffer, "UTF-16")
+    } catch {
+        return ""
+    }
 }
 
 FormatTimestampUtil(timestamp) {
@@ -3878,4 +3931,1510 @@ JsonExtractAny(jsonStr, key) {
 NoCacheUrl(url) {
     separator := InStr(url, "?") ? "&" : "?"
     return url . separator . "nocache=" . A_TickCount
+}
+; ========== STAFF PORTAL SYSTEM ==========
+
+
+
+global STAFF_IDS := ["1247055057489231914,"]  ; Add authorized Discord IDs here
+global staffPortalGui := 0
+
+
+
+
+
+GetStaffCategories() {
+    global BASE_DIR
+    arr := []
+    
+    if !DirExist(BASE_DIR)
+        return arr
+    
+    try {
+        Loop Files, BASE_DIR "\*", "D" {
+            folderName := StrLower(A_LoopFileName)
+            if (folderName = "icons" || folderName = "buttons")
+                continue
+            
+            ; Check if category has any unreleased macros
+            if HasUnreleasedMacros(A_LoopFilePath) {
+                arr.Push(A_LoopFileName)
+            }
+        }
+    }
+    
+    return arr
+}
+
+HasUnreleasedMacros(categoryPath) {
+    hasUnreleased := false
+    
+    try {
+        Loop Files, categoryPath "\*", "D" {
+            subFolder := A_LoopFilePath
+            mainFile := subFolder "\Main.ahk"
+            
+            if FileExist(mainFile) {
+                info := ReadMacroInfo(subFolder)
+                if (StrLower(info.Released) = "no") {
+                    hasUnreleased := true
+                    break
+                }
+            }
+        }
+    }
+    
+    return hasUnreleased
+}
+
+CreateStaffCategoryCard(gui, category, x, y, w, h) {
+    global COLORS
+    
+    card := gui.Add("Text", "x" x " y" y " w" w " h" h " Background" COLORS.card)
+    
+    iconPath := GetGameIcon(category)
+    iconX := x + 15
+    iconY := y + 15
+    iconSize := 40
+    
+    if (iconPath && FileExist(iconPath)) {
+        try {
+            gui.Add("Picture", "x" iconX " y" iconY " w" iconSize " h" iconSize " BackgroundTrans", iconPath)
+        } catch {
+            CreateCategoryBadge(gui, category, iconX, iconY, iconSize)
+        }
+    } else {
+        CreateCategoryBadge(gui, category, iconX, iconY, iconSize)
+    }
+    
+    titleText := gui.Add("Text", "x" (x + 70) " y" (y + 22) " w" (w - 150) " c" COLORS.text " BackgroundTrans", category)
+    titleText.SetFont("s11 bold")
+    
+    betaCount := CountUnreleasedMacros(category)
+    betaBadge := gui.Add("Text", "x" (x + 70) " y" (y + 45) " w80 h18 Background" COLORS.danger " Center c" COLORS.text, 
+        betaCount " Beta")
+    betaBadge.SetFont("s8 bold")
+    
+    openBtn := gui.Add("Button", "x" (x + w - 95) " y" (y + 18) " w80 h34 Background" COLORS.danger, "🔓 Open")
+    openBtn.SetFont("s9 bold")
+    openBtn.OnEvent("Click", (*) => OpenStaffCategory(category))
+}
+
+CountUnreleasedMacros(category) {
+    global BASE_DIR
+    count := 0
+    base := BASE_DIR "\" category
+    
+    if !DirExist(base)
+        return count
+    
+    try {
+        Loop Files, base "\*", "D" {
+            subFolder := A_LoopFilePath
+            mainFile := subFolder "\Main.ahk"
+            
+            if FileExist(mainFile) {
+                info := ReadMacroInfo(subFolder)
+                if (StrLower(info.Released) = "no") {
+                    count++
+                }
+            }
+        }
+    }
+    
+    return count
+}
+
+OpenStaffCategory(category, sortBy := "name_asc", page := 1) {
+    global COLORS, BASE_DIR
+    
+    macros := GetStaffMacrosWithInfo(category, sortBy)
+    
+    if (macros.Length = 0) {
+        MsgBox(
+            "No beta macros found in '" category "'`n`n"
+            "Add Released=No to info.ini to mark macros as beta.",
+            "No Beta Macros",
+            "Iconi"
+        )
+        return
+    }
+    
+    win := Gui("-Resize +Border", "🔒 STAFF - " category " - Beta Macros")
+    win.BackColor := COLORS.bg
+    win.SetFont("s10", "Segoe UI")
+    
+    win.__data := macros
+    win.__cards := []
+    win.__currentPage := page
+    win.__itemsPerPage := 8
+    win.__sortBy := sortBy
+    win.__category := category
+    
+    gameIcon := GetGameIcon(category)
+    if (gameIcon && FileExist(gameIcon)) {
+        try {
+            win.Show("Hide")
+            win.Opt("+Icon" gameIcon)
+        }
+    }
+    
+    win.Add("Text", "x0 y0 w750 h90 Background" COLORS.danger)
+    
+    backBtn := win.Add("Button", "x20 y25 w70 h35 Background" COLORS.cardHover, "← Back")
+    backBtn.SetFont("s10")
+    backBtn.OnEvent("Click", (*) => win.Destroy())
+    
+    title := win.Add("Text", "x105 y20 w400 h100 c" COLORS.text " BackgroundTrans", "🔒 " category " (BETA)")
+    title.SetFont("s22 bold")
+    
+    sortLabel := win.Add("Text", "x530 y25 w60 c" COLORS.text " BackgroundTrans", "Sort by:")
+    sortLabel.SetFont("s9")
+    
+    sortDDL := win.Add("DropDownList", "x530 y45 w200 Background" COLORS.card " c" COLORS.text, 
+        ["🔤 Name (A-Z)", "🔤 Name (Z-A)", "📅 Recently Added"])
+    sortDDL.SetFont("s9")
+    
+    sortIndexMap := Map(
+        "name_asc", 1,
+        "name_desc", 2,
+        "recent", 3
+    )
+    sortDDL.Choose(sortIndexMap.Has(sortBy) ? sortIndexMap[sortBy] : 1)
+    sortDDL.OnEvent("Change", (*) => ChangeStaffSortAndRefresh(win, sortDDL.Text, category))
+    
+    win.__scrollY := 110
+    
+    RenderStaffCards(win)
+    win.Show("w750 h640 Center")
+}
+
+GetStaffMacrosWithInfo(category, sortBy := "name_asc") {
+    global BASE_DIR
+    out := []
+    base := BASE_DIR "\" category
+    
+    if !DirExist(base)
+        return out
+    
+    try {
+        Loop Files, base "\*", "D" {
+            subFolder := A_LoopFilePath
+            mainFile := subFolder "\Main.ahk"
+            
+            if FileExist(mainFile) {
+                info := ReadMacroInfo(subFolder)
+                ; ⚠️ STAFF PORTAL: Show ONLY unreleased macros
+                if (StrLower(info.Released) = "no") {
+                    out.Push({
+                        path: mainFile,
+                        info: info
+                    })
+                }
+            }
+        }
+    }
+    
+    if (out.Length > 1) {
+        switch sortBy {
+            case "name_asc":
+                out := SortByName(out, true)
+            case "name_desc":
+                out := SortByName(out, false)
+            case "recent":
+                out := SortByRecent(out)
+            default:
+                out := SortByName(out, true)
+        }
+    }
+    
+    return out
+}
+
+RenderStaffCards(win) {
+    global COLORS
+    
+    if !win.HasProp("__data")
+        return
+    
+    if win.HasProp("__cards") && win.__cards.Length > 0 {
+        for ctrl in win.__cards {
+            try ctrl.Destroy()
+            catch { 
+
+            }
+        }
+    }
+    win.__cards := []
+    
+    macros := win.__data
+    scrollY := win.__scrollY
+    
+    if (macros.Length = 0) {
+        noResult := win.Add("Text", "x25 y" scrollY " w700 h100 c" COLORS.textDim " Center", "No beta macros found")
+        noResult.SetFont("s10")
+        win.__cards.Push(noResult)
+        return
+    }
+    
+    itemsPerPage := win.__itemsPerPage
+    currentPage := win.__currentPage
+    totalPages := Ceil(macros.Length / itemsPerPage)
+    
+    if (currentPage > totalPages) {
+        currentPage := totalPages
+        win.__currentPage := currentPage
+    }
+    
+    startIdx := ((currentPage - 1) * itemsPerPage) + 1
+    endIdx := Min(currentPage * itemsPerPage, macros.Length)
+    itemsToShow := endIdx - startIdx + 1
+    
+    if (itemsToShow = 1) {
+        item := macros[startIdx]
+        CreateStaffFullWidthCard(win, item, 25, scrollY, 700, 110)
+    } else {
+        cardWidth := 340
+        cardHeight := 110
+        spacing := 10
+        yPos := scrollY
+        
+        Loop itemsToShow {
+            idx := startIdx + A_Index - 1
+            item := macros[idx]
+            
+            col := Mod(A_Index - 1, 2)
+            row := Floor((A_Index - 1) / 2)
+            
+            xPos := 25 + (col * (cardWidth + spacing))
+            yPos := scrollY + (row * (cardHeight + spacing))
+            
+            CreateStaffGridCard(win, item, xPos, yPos, cardWidth, cardHeight)
+        }
+    }
+    
+    if (macros.Length > itemsPerPage) {
+        paginationY := scrollY + 470
+        
+        pageInfo := win.Add("Text", "x25 y" paginationY " w300 c" COLORS.textDim, 
+            "Page " currentPage " of " totalPages " (" macros.Length " beta macros)")
+        pageInfo.SetFont("s9")
+        win.__cards.Push(pageInfo)
+        
+        if (currentPage > 1) {
+            prevBtn := win.Add("Button", "x335 y" (paginationY - 5) " w90 h35 Background" COLORS.accentHover, "← Previous")
+            prevBtn.SetFont("s9")
+            prevBtn.OnEvent("Click", (*) => ChangeStaffPage(win, -1))
+            win.__cards.Push(prevBtn)
+        }
+        
+        if (currentPage < totalPages) {
+            nextBtn := win.Add("Button", "x635 y" (paginationY - 5) " w90 h35 Background" COLORS.accentHover, "Next →")
+            nextBtn.SetFont("s9")
+            nextBtn.OnEvent("Click", (*) => ChangeStaffPage(win, 1))
+            win.__cards.Push(nextBtn)
+        }
+    }
+}
+
+CreateStaffFullWidthCard(win, item, x, y, w, h) {
+    global COLORS
+    
+    card := win.Add("Text", "x" x " y" y " w" w " h" h " Background" COLORS.card)
+    win.__cards.Push(card)
+    
+    ; Beta badge overlay
+    betaBadge := win.Add("Text", "x" (x + 10) " y" (y + 5) " w60 h20 Background" COLORS.danger " Center c" COLORS.text, "BETA")
+    betaBadge.SetFont("s8 bold")
+    win.__cards.Push(betaBadge)
+    
+    iconPath := GetMacroIcon(item.path)
+    hasIcon := false
+    
+    if (iconPath && FileExist(iconPath)) {
+        try {
+            pic := win.Add("Picture", "x" (x + 20) " y" (y + 15) " w80 h80 BackgroundTrans", iconPath)
+            win.__cards.Push(pic)
+            hasIcon := true
+        } catch {
+
+         }
+    }
+    
+    if (!hasIcon) {
+        initial := SubStr(item.info.Title, 1, 1)
+        iconColor := GetCategoryColor(item.info.Title)
+        badge := win.Add("Text", "x" (x + 20) " y" (y + 15) " w80 h80 Background" iconColor " Center", initial)
+        badge.SetFont("s32 bold c" COLORS.text)
+        win.__cards.Push(badge)
+    }
+    
+    titleCtrl := win.Add("Text", "x" (x + 120) " y" (y + 20) " w340 h100 c" COLORS.text " BackgroundTrans", item.info.Title)
+    titleCtrl.SetFont("s13 bold")
+    win.__cards.Push(titleCtrl)
+    
+    creatorCtrl := win.Add("Text", "x" (x + 120) " y" (y + 50) " w340 c" COLORS.textDim " BackgroundTrans", "by " item.info.Creator)
+    creatorCtrl.SetFont("s10")
+    win.__cards.Push(creatorCtrl)
+    
+    versionCtrl := win.Add("Text", "x" (x + 120) " y" (y + 75) " w60 h22 Background" COLORS.accentAlt " c" COLORS.text " Center", "v" item.info.Version)
+    versionCtrl.SetFont("s9 bold")
+    win.__cards.Push(versionCtrl)
+    
+    currentPath := item.path
+    runBtn := win.Add("Button", "x" (x + w - 100) " y" (y + 30) " w90 h50 Background" COLORS.success, "▶ Test")
+    runBtn.SetFont("s12 bold")
+    runBtn.OnEvent("Click", (*) => RunMacro(currentPath))
+    win.__cards.Push(runBtn)
+}
+
+CreateStaffGridCard(win, item, x, y, w, h) {
+    global COLORS
+    
+    card := win.Add("Text", "x" x " y" y " w" w " h" h " Background" COLORS.card)
+    win.__cards.Push(card)
+    
+    ; Beta badge
+    betaBadge := win.Add("Text", "x" (x + 5) " y" (y + 5) " w45 h16 Background" COLORS.danger " Center c" COLORS.text, "BETA")
+    betaBadge.SetFont("s7 bold")
+    win.__cards.Push(betaBadge)
+    
+    iconPath := GetMacroIcon(item.path)
+    hasIcon := false
+    
+    if (iconPath && FileExist(iconPath)) {
+        try {
+            pic := win.Add("Picture", "x" (x + 15) " y" (y + 15) " w60 h60 BackgroundTrans", iconPath)
+            win.__cards.Push(pic)
+            hasIcon := true
+        } catch { 
+
+        }
+    }
+    
+    if (!hasIcon) {
+        initial := SubStr(item.info.Title, 1, 1)
+        iconColor := GetCategoryColor(item.info.Title)
+        badge := win.Add("Text", "x" (x + 15) " y" (y + 15) " w60 h60 Background" iconColor " Center", initial)
+        badge.SetFont("s24 bold c" COLORS.text)
+        win.__cards.Push(badge)
+    }
+    
+    titleCtrl := win.Add("Text", "x" (x + 90) " y" (y + 15) " w" (w - 190) " h30 c" COLORS.text " BackgroundTrans", item.info.Title)
+    titleCtrl.SetFont("s11 bold")
+    win.__cards.Push(titleCtrl)
+    
+    creatorCtrl := win.Add("Text", "x" (x + 90) " y" (y + 40) " w" (w - 190) " c" COLORS.textDim " BackgroundTrans", "by " item.info.Creator)
+    creatorCtrl.SetFont("s9")
+    win.__cards.Push(creatorCtrl)
+    
+    versionCtrl := win.Add("Text", "x" (x + 90) " y" (y + 63) " w50 h18 Background" COLORS.accentAlt " c" COLORS.text " Center", "v" item.info.Version)
+    versionCtrl.SetFont("s8 bold")
+    win.__cards.Push(versionCtrl)
+    
+    currentPath := item.path
+    runBtn := win.Add("Button", "x" (x + w - 90) " y" (y + 25) " w80 h50 Background" COLORS.success, "▶ Test")
+    runBtn.SetFont("s10 bold")
+    runBtn.OnEvent("Click", (*) => RunMacro(currentPath))
+    win.__cards.Push(runBtn)
+}
+
+ChangeStaffSortAndRefresh(win, sortText, category) {
+    sortMap := Map(
+        "🔤 Name (A-Z)", "name_asc",
+        "🔤 Name (Z-A)", "name_desc",
+        "📅 Recently Added", "recent"
+    )
+    
+    sortBy := sortMap.Has(sortText) ? sortMap[sortText] : "name_asc"
+    
+    win.Destroy()
+    Sleep 100
+    OpenStaffCategory(category, sortBy, 1)
+}
+
+ChangeStaffPage(win, direction) {
+    category := win.__category
+    sortBy := win.__sortBy
+    newPage := win.__currentPage + direction
+    
+    totalPages := Ceil(win.__data.Length / win.__itemsPerPage)
+    
+    if (newPage < 1)
+        newPage := 1
+    if (newPage > totalPages)
+        newPage := totalPages
+    
+    win.Destroy()
+    Sleep 100
+    OpenStaffCategory(category, sortBy, newPage)
+}
+
+
+; ========== STAFF AUTHENTICATION SYSTEM ==========
+
+global STAFF_CREDENTIALS := Map(
+    "Dennis", {password: "Zelaya26", discord_id: "592481677062832148", role: "Admin"},
+    "Hamza", {password: "HamzaRXYT", discord_id: "1429912062397776055", role: "Admin"},
+    "Vvistal", {password: "dev456", discord_id: "1253264619363893324", role: "Admin"},
+    "Santa", {password: "AikyDoodles07", discord_id: "886398974456655892", role: "Owner"},
+    "reversals", {password: "Ilovefemboys", discord_id: "1247055057489231914", role: "Owner"},
+    "Notsus", {password: "Notsus123", discord_id: "966696524904022139", role: "Admin"},
+    "Makoral", {password: "2420", discord_id: "1231901829630267473", role: "Developer"},
+)
+
+global STAFF_SESSION_FILE := ""
+global currentStaffUser := ""
+global currentStaffRole := ""
+
+; Initialize staff session file path
+InitializeStaffSession() {
+    global SECURE_VAULT, STAFF_SESSION_FILE
+    
+    ; Make sure SECURE_VAULT is initialized first
+    if (SECURE_VAULT = "")
+        return
+    
+    STAFF_SESSION_FILE := SECURE_VAULT "\staff_session.dat"
+}
+
+; Call this in your InitializeSecureVault function
+; Add this line after: MANIFEST_URL := DecryptManifestUrl()
+; InitializeStaffSession()
+
+; Modified hotkey - now shows login dialog first
+^+s::ShowStaffLogin()
+
+ShowStaffLogin() {
+    global COLORS, currentStaffUser
+    
+    ; Check if already logged in
+    if (currentStaffUser != "") {
+        OpenStaffPortal()
+        return
+    }
+    
+    ; Check for saved session
+    if LoadStaffSession() {
+        OpenStaffPortal()
+        return
+    }
+    
+    ; Show login dialog
+    loginGui := Gui("+AlwaysOnTop", "🔒 Staff Login")
+    loginGui.BackColor := COLORS.bg
+    loginGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    loginGui.Add("Text", "x0 y0 w400 h80 Background" COLORS.danger)
+    
+    titleText := loginGui.Add("Text", "x20 y15 w360 c" COLORS.text " BackgroundTrans", "🔒 Staff Portal Login")
+    titleText.SetFont("s16 bold")
+    
+    subtitleText := loginGui.Add("Text", "x20 y45 w360 c" COLORS.text " BackgroundTrans", "Authorized Personnel Only")
+    subtitleText.SetFont("s9")
+    
+    ; Login form
+    loginGui.Add("Text", "x20 y100 w360 c" COLORS.text, "Staff Username:")
+    usernameEdit := loginGui.Add("Edit", "x20 y125 w360 h35 Background" COLORS.card " c" COLORS.text)
+    usernameEdit.SetFont("s11")
+    
+    loginGui.Add("Text", "x20 y175 w360 c" COLORS.text, "Password:")
+    passwordEdit := loginGui.Add("Edit", "x20 y200 w360 h35 Password Background" COLORS.card " c" COLORS.text)
+    passwordEdit.SetFont("s11")
+    
+    
+    ; Status text
+    statusText := loginGui.Add("Text", "x20 y280 w360 h30 c" COLORS.danger " Center", "")
+    statusText.SetFont("s9 bold")
+    
+    ; Buttons
+    loginBtn := loginGui.Add("Button", "x20 y320 w175 h45 Background" COLORS.success, "🔓 Login")
+    loginBtn.SetFont("s11 bold")
+    
+    cancelBtn := loginGui.Add("Button", "x205 y320 w175 h45 Background" COLORS.cardHover, "✕ Cancel")
+    cancelBtn.SetFont("s11 bold")
+    
+    ; Event handlers
+    loginBtn.OnEvent("Click", (*) => AttemptStaffLogin(
+        usernameEdit.Value, 
+        passwordEdit.Value,  
+        statusText, 
+        loginGui
+    ))
+    
+    cancelBtn.OnEvent("Click", (*) => loginGui.Destroy())
+    
+    ; Allow Enter key to submit
+    usernameEdit.OnEvent("Focus", (*) => (
+        HotIfWinActive("ahk_id " loginGui.Hwnd),
+        Hotkey("Enter", (*) => AttemptStaffLogin(
+            usernameEdit.Value, 
+            passwordEdit.Value, 
+
+            statusText, 
+            loginGui
+        ), "On")
+    ))
+    
+    passwordEdit.OnEvent("Focus", (*) => (
+        HotIfWinActive("ahk_id " loginGui.Hwnd),
+        Hotkey("Enter", (*) => AttemptStaffLogin(
+            usernameEdit.Value, 
+            passwordEdit.Value, 
+
+            statusText, 
+            loginGui
+        ), "On")
+    ))
+    
+    loginGui.OnEvent("Close", (*) => loginGui.Destroy())
+    loginGui.Show("w400 h385 Center")
+    
+    ; Focus username field
+    usernameEdit.Focus()
+}
+
+AttemptStaffLogin(username, password,  statusControl, loginGui) {
+    global STAFF_CREDENTIALS, currentStaffUser, currentStaffRole, COLORS
+        global STAFF_USERNAME, STAFF_ROLE
+    username := Trim(username)
+    password := Trim(password)
+    
+    if (username = "" || password = "") {
+        statusControl.Value := "❌ Please enter username and password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    statusControl.Value := "Verifying credentials..."
+    statusControl.Opt("c" COLORS.warning)
+    
+    ; Check credentials
+    if (!STAFF_CREDENTIALS.Has(username)) {
+        Sleep 500  ; Prevent timing attacks
+        statusControl.Value := "❌ Invalid username or password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    staffData := STAFF_CREDENTIALS[username]
+    
+    if (staffData.password != password) {
+        Sleep 500  ; Prevent timing attacks
+        statusControl.Value := "❌ Invalid username or password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    ; Login successful
+    currentStaffUser := username
+    currentStaffRole := staffData.role
+    
+    statusControl.Value := "✅ Login successful! Opening portal..."
+    statusControl.Opt("c" COLORS.success)
+    SoundBeep(1000, 100)
+    
+    ; Save session if remember me is checked
+
+    ; Log the login
+    LogStaffLogin(username, staffData.role)
+    
+    ; Close login and open portal
+    SetTimer(() => (
+        loginGui.Destroy(),
+        OpenStaffPortal()
+    ), -1000)
+}
+
+
+
+
+
+SaveStaffSession(username, role) {
+    global STAFF_SESSION_FILE
+
+
+    if (STAFF_SESSION_FILE = "") {
+
+        return false
+    }
+
+    sessionData := username "|" role "|" A_Now
+    encrypted := EncryptStaffSession(sessionData)
+
+    try {
+        FileAppend encrypted, STAFF_SESSION_FILE, "UTF-8"
+    } catch as err {
+        MsgBox "FileAppend FAILED:`n" err.Message
+        return false
+    }
+
+    if FileExist(STAFF_SESSION_FILE) {
+
+        return true
+
+
+    }
+}
+
+
+
+LoadStaffSession() {
+    global STAFF_SESSION_FILE
+
+    if (STAFF_SESSION_FILE = "") {
+
+        return false
+    }
+
+    if !FileExist(STAFF_SESSION_FILE) {
+
+        return false
+    }
+
+    raw := FileRead(STAFF_SESSION_FILE, "UTF-8")
+
+    if (raw = "") {
+
+        return false
+    }
+
+    decrypted := EncryptStaffSession(raw)  ; XOR is symmetric
+
+    parts := StrSplit(decrypted, "|")
+
+    if (parts.Length < 3) {
+        MsgBox "LoadStaffSession: invalid session format`n" decrypted
+        return false
+    }
+
+    username := parts[1]
+    role := parts[2]
+
+    ; ✅ store session state
+    global STAFF_USERNAME := username
+    global STAFF_ROLE := role
+
+    MsgBox "Auto-login OK`nUser: " username "`nRole: " role
+    return true
+}
+
+
+
+EncryptStaffSession(data) {
+    global MACHINE_KEY
+    
+    ; Simple XOR encryption with machine key
+    encrypted := ""
+    keyLen := StrLen(MACHINE_KEY)
+    
+    Loop Parse data {
+        keyChar := SubStr(MACHINE_KEY, Mod(A_Index - 1, keyLen) + 1, 1)
+        encrypted .= Chr(Ord(A_LoopField) ^ Ord(keyChar))
+    }
+    
+    ; Convert to hex
+    hex := ""
+    Loop Parse encrypted
+        hex .= Format("{:02X}", Ord(A_LoopField))
+    
+    return hex
+}
+
+DecryptStaffSession(hex) {
+    global MACHINE_KEY
+    
+    ; Convert from hex
+    data := ""
+    pos := 1
+    while (pos <= StrLen(hex)) {
+        hexByte := SubStr(hex, pos, 2)
+        data .= Chr("0x" hexByte)
+        pos += 2
+    }
+    
+    ; XOR decrypt
+    decrypted := ""
+    keyLen := StrLen(MACHINE_KEY)
+    
+    Loop Parse data {
+        keyChar := SubStr(MACHINE_KEY, Mod(A_Index - 1, keyLen) + 1, 1)
+        decrypted .= Chr(Ord(A_LoopField) ^ Ord(keyChar))
+    }
+    
+    return decrypted
+}
+
+LogStaffLogin(username, role) {
+    global WEBHOOK_URL
+    
+    if (WEBHOOK_URL = "")
+        return
+    
+    computerName := A_ComputerName
+    userName := A_UserName
+    
+    fields := '{"name":"Staff User","value":"' username '","inline":true},'
+            . '{"name":"Role","value":"' role '","inline":true},'
+            . '{"name":"Computer","value":"' computerName '","inline":true},'
+            . '{"name":"System User","value":"' userName '","inline":true}'
+    
+    SendWebhook("🔐 Staff Login", username " logged into staff portal", 15844367, fields)
+}
+
+StaffLogout() {
+    global currentStaffUser, currentStaffRole, STAFF_SESSION_FILE
+    
+    if (currentStaffUser = "") {
+        MsgBox "You are not logged in as staff.", "Staff Logout", "Iconi"
+        return
+    }
+    
+    choice := MsgBox(
+        "Log out from staff portal?`n`n"
+        "Current user: " currentStaffUser "`n"
+        "Role: " currentStaffRole,
+        "Staff Logout",
+        "YesNo Iconi"
+    )
+    
+    if (choice = "No")
+        return
+    
+    ; Clear session
+    currentStaffUser := ""
+    currentStaffRole := ""
+    
+    ; Delete saved session
+    try {
+        if FileExist(STAFF_SESSION_FILE)
+            FileDelete STAFF_SESSION_FILE
+    }
+    
+    MsgBox "✅ Logged out successfully!", "Staff Logout", "Iconi T2"
+}
+
+; ========== UPDATED STAFF PORTAL ==========
+
+
+CreateStaffPortalGui() {
+    global staffPortalGui, COLORS, BASE_DIR, ICON_DIR, SECURE_VAULT
+    global currentStaffUser, currentStaffRole
+    
+    staffPortalGui := Gui("-Resize +Border", "🔒 Staff Portal - Beta Testing")
+    staffPortalGui.BackColor := COLORS.bg
+    staffPortalGui.SetFont("s10", "Segoe UI")
+    
+    ; Set window icon
+    iconPath := ICON_DIR "\TrayIcon.png"
+    if FileExist(iconPath) {
+        try {
+            staffPortalGui.Show("Hide")
+            staffPortalGui.Opt("+Icon" iconPath)
+        }
+    }
+    
+    ; Header with staff branding
+    staffPortalGui.Add("Text", "x0 y0 w550 h100 Background" COLORS.danger)
+    
+    ; Staff logo
+    launcherImage := ICON_DIR "\Launcher.png"
+    if FileExist(launcherImage) {
+        try {
+            staffPortalGui.Add("Picture", "x5 y5 w75 h75 BackgroundTrans", launcherImage)
+        }
+    }
+    
+    titleText := staffPortalGui.Add("Text", "x85 y10 w300 h100 c" COLORS.text " BackgroundTrans", "🔒 STAFF PORTAL")
+    titleText.SetFont("s20 bold")
+    
+    subtitleText := staffPortalGui.Add("Text", "x85 y45 w300 c" COLORS.text " BackgroundTrans", "Beta Testing Area")
+    subtitleText.SetFont("s10")
+    
+    ; User info badge
+    userInfoText := staffPortalGui.Add("Text", "x85 y70 w300 c" COLORS.text " BackgroundTrans", 
+        "👤 " currentStaffUser " • " currentStaffRole)
+    userInfoText.SetFont("s8")
+    
+    ; Header buttons - Top row
+    btnLogout := staffPortalGui.Add("Button", "x395 y10 w70 h28 Background" COLORS.warning, "🚪 Logout")
+    btnLogout.SetFont("s8")
+    btnLogout.OnEvent("Click", (*) => (staffPortalGui.Destroy(), StaffLogout()))
+    
+    btnClose := staffPortalGui.Add("Button", "x470 y10 w70 h28 Background" COLORS.cardHover, "✕ Close")
+    btnClose.SetFont("s8")
+    btnClose.OnEvent("Click", (*) => staffPortalGui.Destroy())
+    
+    ; Header buttons - Bottom row
+    btnRefresh := staffPortalGui.Add("Button", "x395 y42 w145 h28 Background" COLORS.accentHover, "🔄 Refresh")
+    btnRefresh.SetFont("s8")
+    btnRefresh.OnEvent("Click", (*) => RefreshStaffPortal())
+    
+    ; Warning banner
+    warningText := staffPortalGui.Add("Text", "x25 y115 w500 h40 Background" COLORS.warning " Center", 
+        "⚠️ STAFF ONLY - Beta/Unreleased Macros`nDo not share with users!")
+    warningText.SetFont("s9 bold c" COLORS.bg)
+    
+    staffPortalGui.Add("Text", "x25 y170 w500 c" COLORS.text, "Beta Testing Macros").SetFont("s12 bold")
+    staffPortalGui.Add("Text", "x25 y195 w500 h1 Background" COLORS.border)
+    
+    yPos := 215
+    
+    ; Get all beta/unreleased macros
+    categories := GetStaffCategories()
+    
+    if (categories.Length = 0) {
+        noBetaText := staffPortalGui.Add("Text", "x25 y" yPos " w500 h120 c" COLORS.textDim " Center", 
+            "No beta macros found`n`nMacros with Released=No in info.ini will appear here")
+        noBetaText.SetFont("s10")
+        yPos += 120
+    } else {
+        for category in categories {
+            CreateStaffCategoryCard(staffPortalGui, category, 25, yPos, 500, 70)
+            yPos += 82
+        }
+    }
+    
+    staffPortalGui.Show("w550 h" (yPos + 20) " Center")
+}
+
+; Keep all other staff portal functions (GetStaffCategories, HasUnreleasedMacros, etc.)
+; from the previous code - they remain unchanged
+; ========== ROLE-BASED PORTAL SYSTEM ==========
+
+OpenStaffPortal() {
+    global currentStaffUser, currentStaffRole
+    
+    ; Verify still logged in
+    if (currentStaffUser = "") {
+        MsgBox "❌ Not logged in!`n`nPlease login first.", "Access Denied", "Icon!"
+        return
+    }
+    
+    ; Route to appropriate portal based on role
+    if (StrLower(currentStaffRole) = "developer" || StrLower(currentStaffRole) = "dev") {
+        CreateDeveloperPortalGui()
+    } else {
+        CreateStaffPortalGui()
+    }
+}
+
+; ========== DEVELOPER PORTAL (Enhanced Staff Portal) ==========
+
+CreateDeveloperPortalGui() {
+    global staffPortalGui, COLORS, BASE_DIR, ICON_DIR, SECURE_VAULT
+    global currentStaffUser, currentStaffRole
+    
+    staffPortalGui := Gui("-Resize +Border", "🔧 Developer Portal - Beta Testing & Submissions")
+    staffPortalGui.BackColor := COLORS.bg
+    staffPortalGui.SetFont("s10", "Segoe UI")
+    
+    ; Set window icon
+    iconPath := ICON_DIR "\TrayIcon.png"
+    if FileExist(iconPath) {
+        try {
+            staffPortalGui.Show("Hide")
+            staffPortalGui.Opt("+Icon" iconPath)
+        }
+    }
+    
+    ; Header with developer branding (purple/blue)
+    staffPortalGui.Add("Text", "x0 y0 w550 h100 Background0x8957e5")
+    
+    ; Developer logo
+    launcherImage := ICON_DIR "\Launcher.png"
+    if FileExist(launcherImage) {
+        try {
+            staffPortalGui.Add("Picture", "x5 y5 w75 h75 BackgroundTrans", launcherImage)
+        }
+    }
+    
+    titleText := staffPortalGui.Add("Text", "x85 y10 w300 h100 c" COLORS.text " BackgroundTrans", "🔧 DEVELOPER")
+    titleText.SetFont("s20 bold")
+    
+    subtitleText := staffPortalGui.Add("Text", "x85 y45 w300 c" COLORS.text " BackgroundTrans", "Portal & Macro Submission")
+    subtitleText.SetFont("s10")
+    
+    ; User info badge
+    userInfoText := staffPortalGui.Add("Text", "x85 y70 w300 c" COLORS.text " BackgroundTrans", 
+        "👤 " currentStaffUser " • " currentStaffRole)
+    userInfoText.SetFont("s8")
+    
+    ; Header buttons - Top row
+    btnLogout := staffPortalGui.Add("Button", "x395 y10 w70 h28 Background" COLORS.warning, "🚪 Logout")
+    btnLogout.SetFont("s8")
+    btnLogout.OnEvent("Click", (*) => (staffPortalGui.Destroy(), StaffLogout()))
+    
+    btnClose := staffPortalGui.Add("Button", "x470 y10 w70 h28 Background" COLORS.cardHover, "✕ Close")
+    btnClose.SetFont("s8")
+    btnClose.OnEvent("Click", (*) => staffPortalGui.Destroy())
+    
+    ; Header buttons - Bottom row
+    btnRefresh := staffPortalGui.Add("Button", "x395 y42 w145 h28 Background" COLORS.accentHover, "🔄 Refresh")
+    btnRefresh.SetFont("s8")
+    btnRefresh.OnEvent("Click", (*) => RefreshStaffPortal())
+    
+    ; DEVELOPER EXCLUSIVE: Submit Macro Section
+  staffPortalGui.Add("Text", "x25 y115 w500 h60 Background0x1f6feb Border")
+    
+    submitTitle := staffPortalGui.Add("Text", "x35 y125 w400 c" COLORS.text " BackgroundTrans", "📤 Submit New Macro")
+    submitTitle.SetFont("s12 bold")
+    
+    submitDesc := staffPortalGui.Add("Text", "x35 y150 w400 c" COLORS.text " BackgroundTrans", 
+        "Upload a .zip file containing your macro for review")
+    submitDesc.SetFont("s8")
+    
+    btnSubmitMacro := staffPortalGui.Add("Button", "x445 y125 w80 h40 Background" COLORS.success, "📤 Submit")
+    btnSubmitMacro.SetFont("s9 bold")
+    btnSubmitMacro.OnEvent("Click", (*) => ShowMacroSubmissionDialog())
+    
+    ; Warning banner
+    warningText := staffPortalGui.Add("Text", "x25 y190 w500 h40 Background" COLORS.warning " Center", 
+        "⚠️ DEVELOPER PORTAL - Beta Testing & Macro Submissions`nDo not share credentials!")
+    warningText.SetFont("s9 bold c" COLORS.bg)
+    
+    staffPortalGui.Add("Text", "x25 y245 w500 c" COLORS.text, "Beta Testing Macros").SetFont("s12 bold")
+    staffPortalGui.Add("Text", "x25 y270 w500 h1 Background" COLORS.border)
+    
+    yPos := 290
+    
+    ; Get all beta/unreleased macros
+    categories := GetStaffCategories()
+    
+    if (categories.Length = 0) {
+        noBetaText := staffPortalGui.Add("Text", "x25 y" yPos " w500 h120 c" COLORS.textDim " Center", 
+            "No beta macros found`n`nMacros with Released=No in info.ini will appear here")
+        noBetaText.SetFont("s10")
+        yPos += 120
+    } else {
+        for category in categories {
+            CreateStaffCategoryCard(staffPortalGui, category, 25, yPos, 500, 70)
+            yPos += 82
+        }
+    }
+    
+    staffPortalGui.Show("w550 h" (yPos + 20) " Center")
+}
+
+; ========== MACRO SUBMISSION DIALOG ==========
+
+ShowMacroSubmissionDialog() {
+    global COLORS, currentStaffUser
+    
+    submitGui := Gui("+AlwaysOnTop", "📤 Submit Macro")
+    submitGui.BackColor := COLORS.bg
+    submitGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    submitGui.Add("Text", "x0 y0 w600 h80 Background0x1f6feb")
+    
+    titleText := submitGui.Add("Text", "x20 y15 w560 c" COLORS.text " BackgroundTrans", "📤 Submit New Macro")
+    titleText.SetFont("s18 bold")
+    
+    subtitleText := submitGui.Add("Text", "x20 y50 w560 c" COLORS.text " BackgroundTrans", 
+        "Upload your macro .zip file for review and distribution")
+    subtitleText.SetFont("s9")
+    
+    ; Instructions
+    submitGui.Add("Text", "x20 y100 w560 c" COLORS.text, "Instructions:").SetFont("s11 bold")
+    
+    instructionsText := submitGui.Add("Text", "x20 y125 w560 h80 c" COLORS.textDim, 
+        "1. Package your macro folder as a .zip file`n"
+        . "2. Include: Main.ahk, info.ini, icon.png (optional)`n"
+        . "3. Max file size: 10MB`n"
+        . "4. Your submission will be reviewed by administrators")
+    instructionsText.SetFont("s9")
+    
+    submitGui.Add("Text", "x20 y220 w560 h1 Background" COLORS.border)
+    
+    ; Macro details form
+    submitGui.Add("Text", "x20 y235 w560 c" COLORS.text, "Macro Name:")
+    macroNameEdit := submitGui.Add("Edit", "x20 y260 w560 h30 Background" COLORS.card " c" COLORS.text)
+    
+categoryDDL := submitGui.Add(
+    "DropDownList",
+    "x20 y330 w560 h30 R5 Background" COLORS.card " c" COLORS.text,
+    ["Pet simulator!", "Adopt me!", "Rebirth champions ultimate!", "BGSI!", "New game!"]
+)
+
+categoryDDL.Choose(1)
+
+    
+    submitGui.Add("Text", "x20 y375 w560 c" COLORS.text, "Description:")
+    descriptionEdit := submitGui.Add("Edit", "x20 y400 w560 h80 Multi Background" COLORS.card " c" COLORS.text)
+    
+    submitGui.Add("Text", "x20 y495 w560 c" COLORS.text, "Select .zip file:")
+    
+    ; File selection
+    filePathEdit := submitGui.Add("Edit", "x20 y520 w440 h30 Background" COLORS.card " c" COLORS.text " ReadOnly")
+    
+    browseBtn := submitGui.Add("Button", "x470 y520 w110 h30 Background" COLORS.accentAlt, "📁 Browse...")
+    browseBtn.SetFont("s9")
+    browseBtn.OnEvent("Click", (*) => SelectMacroZip(filePathEdit))
+    
+    ; Status text
+    statusText := submitGui.Add("Text", "x20 y565 w560 h30 c" COLORS.textDim " Center", "")
+    statusText.SetFont("s9 bold")
+    
+    ; Buttons
+    submitBtn := submitGui.Add("Button", "x20 y605 w275 h45 Background" COLORS.success, "📤 Submit Macro")
+    submitBtn.SetFont("s11 bold")
+    
+    cancelBtn := submitGui.Add("Button", "x305 y605 w275 h45 Background" COLORS.danger, "✕ Cancel")
+    cancelBtn.SetFont("s11 bold")
+    
+    submitBtn.OnEvent("Click", (*) => SubmitMacroToWebhook(
+        macroNameEdit.Value,
+        categoryDDL.Text,
+        descriptionEdit.Value,
+        filePathEdit.Value,
+        statusText,
+        submitGui
+    ))
+    
+    cancelBtn.OnEvent("Click", (*) => submitGui.Destroy())
+    
+    submitGui.OnEvent("Close", (*) => submitGui.Destroy())
+    submitGui.Show("w600 h670 Center")
+}
+
+SelectMacroZip(filePathControl) {
+    selectedFile := FileSelect(, , "Select Macro ZIP File", "ZIP Files (*.zip)")
+    
+    if (selectedFile = "")
+        return
+    
+    ; Validate file
+    if !FileExist(selectedFile) {
+        MsgBox "File not found!", "Error", "Icon!"
+        return
+    }
+    
+    SplitPath selectedFile, , , &ext
+    if (StrLower(ext) != "zip") {
+        MsgBox "Please select a .zip file!", "Error", "Icon!"
+        return
+    }
+    
+    ; Check file size (max 10MB)
+    fileSize := 0
+    Loop Files, selectedFile
+        fileSize := A_LoopFileSize
+    
+    maxSize := 10 * 1024 * 1024  ; 10MB in bytes
+    if (fileSize > maxSize) {
+        sizeMB := Round(fileSize / (1024 * 1024), 2)
+        MsgBox "File too large! (" sizeMB "MB)`n`nMaximum size: 10MB", "Error", "Icon!"
+        return
+    }
+    
+    filePathControl.Value := selectedFile
+}
+
+SubmitMacroToWebhook(macroName, category, description, zipPath, statusControl, submitGui) {
+    global WEBHOOK_URL, currentStaffUser, COLORS, SECURE_VAULT
+    
+    ; Validate inputs
+    if (Trim(macroName) = "") {
+        statusControl.Value := "❌ Please enter a macro name"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    if (Trim(zipPath) = "" || !FileExist(zipPath)) {
+        statusControl.Value := "❌ Please select a valid .zip file"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    if (WEBHOOK_URL = "") {
+        MsgBox(
+            "❌ Webhook URL not configured!`n`n"
+            . "The webhook URL needs to be set in the manifest.json file.`n"
+            . "Please contact the administrator.",
+            "Configuration Error",
+            "Icon!"
+        )
+        statusControl.Value := "❌ Webhook URL not configured"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    statusControl.Value := "📤 Preparing submission..."
+    statusControl.Opt("c" COLORS.warning)
+    
+    try {
+        ; Get file info
+        SplitPath zipPath, &fileName
+        fileSize := 0
+        Loop Files, zipPath
+            fileSize := A_LoopFileSize
+        
+        fileSizeMB := Round(fileSize / (1024 * 1024), 2)
+        
+        ; Check file size limit (Discord free webhooks: 25MB, but recommend 10MB)
+        maxSize := 10 * 1024 * 1024  ; 10MB
+        if (fileSize > maxSize) {
+            statusControl.Value := "❌ File too large for Discord upload"
+            statusControl.Opt("c" COLORS.danger)
+            MsgBox(
+                "❌ File is too large to upload to Discord!`n`n"
+                . "File size: " fileSizeMB " MB`n"
+                . "Maximum: 10 MB`n`n"
+                . "Please compress your macro or remove unnecessary files.",
+                "File Too Large",
+                "Icon!"
+            )
+            return
+        }
+        
+        ; Create submissions directory (backup)
+        submissionsDir := SECURE_VAULT "\submissions"
+        if !DirExist(submissionsDir) {
+            try DirCreate submissionsDir
+        }
+        
+        ; Save backup copy locally
+        timestamp := FormatTime(, "yyyyMMdd_HHmmss")
+        newFileName := timestamp "_" currentStaffUser "_" fileName
+        destPath := submissionsDir "\" newFileName
+        
+        try {
+            FileCopy zipPath, destPath, 1
+        }
+        
+        statusControl.Value := "📤 Calculating file hash..."
+        
+        ; Calculate MD5 hash
+        fileHash := "N/A"
+        try {
+            fileHash := CalculateFileMD5(zipPath)
+            if (fileHash = "" || InStr(fileHash, "ERROR"))
+                fileHash := "Calculation failed"
+        } catch {
+            fileHash := "Unavailable"
+        }
+        
+        statusControl.Value := "📤 Uploading to Discord..."
+        
+        ; Upload file to Discord using multipart/form-data
+        success := SendFileToDiscordWebhook(
+            WEBHOOK_URL,
+            zipPath,
+            macroName,
+            category,
+            description,
+            currentStaffUser,
+            fileHash,
+            fileSizeMB
+        )
+        
+        if (success) {
+            statusControl.Value := "✅ Macro submitted successfully!"
+            statusControl.Opt("c" COLORS.success)
+            SoundBeep(1000, 100)
+            
+            ; Show success message
+            MsgBox(
+                "✅ Macro Submitted Successfully!`n`n"
+                . "Your macro has been uploaded to Discord for review.`n"
+                . "An administrator will review it soon.`n`n"
+                . "Details:`n"
+                . "• Macro: " macroName "`n"
+                . "• Category: " category "`n"
+                . "• File: " fileName " (" fileSizeMB " MB)`n"
+                . "• Hash: " fileHash "`n`n"
+                . "Backup saved locally at:`n" destPath,
+                "Submission Success",
+                "Iconi"
+            )
+            
+            SetTimer(() => submitGui.Destroy(), -2000)
+            
+        } else {
+            statusControl.Value := "❌ Upload failed"
+            statusControl.Opt("c" COLORS.danger)
+            SoundBeep(500, 200)
+            
+            MsgBox(
+                "❌ Failed to upload to Discord!`n`n"
+                . "However, your file was saved locally at:`n"
+                . destPath "`n`n"
+                . "Please contact an administrator.",
+                "Upload Failed",
+                "Icon!"
+            )
+        }
+        
+    } catch as err {
+        statusControl.Value := "❌ Error: " err.Message
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        
+        MsgBox(
+            "❌ Submission Error!`n`n"
+            . "Error: " err.Message "`n`n"
+            . "Line: " err.Line,
+            "Error",
+            "Icon!"
+        )
+    }
+}
+
+; ========== SEND FILE TO DISCORD WEBHOOK WITH MULTIPART/FORM-DATA ==========
+
+SendFileToDiscordWebhook(webhookUrl, filePath, macroName, category, description, developer, fileHash, fileSizeMB) {
+    try {
+        ; Read the file into binary buffer
+        file := FileOpen(filePath, "r")
+        if !file
+            return false
+        
+        fileSize := file.Length
+        fileBuffer := Buffer(fileSize)
+        file.RawRead(fileBuffer, fileSize)
+        file.Close()
+        
+        SplitPath filePath, &fileName
+        
+        ; Create embed JSON
+        timestampISO := FormatTime(, "yyyy-MM-ddTHH:mm:ssZ")
+        
+        embedJson := '{"embeds":[{'
+                   . '"title":"📤 New Macro Submission",'
+                   . '"description":"A developer has submitted a new macro for review",'
+                   . '"color":3447003,'
+                   . '"timestamp":"' timestampISO '",'
+                   . '"fields":['
+                   . '{"name":"👤 Developer","value":"' JsonEscape(developer) '","inline":true},'
+                   . '{"name":"🎮 Category","value":"' JsonEscape(category) '","inline":true},'
+                   . '{"name":"📦 Macro Name","value":"' JsonEscape(macroName) '","inline":false},'
+                   . '{"name":"💾 File Size","value":"' fileSizeMB ' MB","inline":true},'
+                   . '{"name":"📅 Submitted","value":"' FormatTime(, "yyyy-MM-dd HH:mm") '","inline":true},'
+                   . '{"name":"🔐 File Hash (MD5)","value":"' fileHash '","inline":false},'
+                   . '{"name":"📝 Description","value":"' JsonEscape(description) '","inline":false}'
+                   . '],'
+                   . '"footer":{"text":"AHK Vault Developer Portal • Review & Download Attached File"}'
+                   . '}]}'
+        
+        ; Create multipart boundary
+        boundary := "----WebKitFormBoundary" A_TickCount
+        
+        ; Build multipart body manually
+        CRLF := "`r`n"
+        
+        ; Part 1: payload_json (the embed)
+        body := ""
+        body .= "--" boundary CRLF
+        body .= "Content-Disposition: form-data; name=`"payload_json`"" CRLF
+        body .= "Content-Type: application/json" CRLF CRLF
+        body .= embedJson CRLF
+        
+        ; Part 2: file attachment
+        body .= "--" boundary CRLF
+        body .= "Content-Disposition: form-data; name=`"file`"; filename=`"" fileName "`"" CRLF
+        body .= "Content-Type: application/zip" CRLF CRLF
+        
+        ; Convert text parts to binary
+        bodyBuffer := StrToBuffer(body)
+        
+        ; Calculate total size
+        footerText := CRLF "--" boundary "--" CRLF
+        footerBuffer := StrToBuffer(footerText)
+        
+        totalSize := bodyBuffer.Size + fileSize + footerBuffer.Size
+        
+        ; Combine all parts into one buffer
+        finalBuffer := Buffer(totalSize)
+        
+        ; Copy body
+        DllCall("RtlMoveMemory", "Ptr", finalBuffer, "Ptr", bodyBuffer, "UInt", bodyBuffer.Size)
+        
+        ; Copy file data
+        DllCall("RtlMoveMemory", "Ptr", finalBuffer.Ptr + bodyBuffer.Size, "Ptr", fileBuffer, "UInt", fileSize)
+        
+        ; Copy footer
+        DllCall("RtlMoveMemory", "Ptr", finalBuffer.Ptr + bodyBuffer.Size + fileSize, "Ptr", footerBuffer, "UInt", footerBuffer.Size)
+        
+        ; Send request
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(60000, 60000, 60000, 60000)  ; Longer timeout for file upload
+        req.Open("POST", webhookUrl, false)
+        req.SetRequestHeader("Content-Type", "multipart/form-data; boundary=" boundary)
+        
+        ; Send the binary data
+        safeArray := ComObjArray(0x11, totalSize)  ; VT_UI1 array
+        pvData := NumGet(ComObjValue(safeArray) + 8 + A_PtrSize, "Ptr")
+        DllCall("RtlMoveMemory", "Ptr", pvData, "Ptr", finalBuffer, "UInt", totalSize)
+        
+        req.Send(safeArray)
+        
+        status := req.Status
+        
+        return (status = 200 || status = 204)
+        
+    } catch as err {
+        MsgBox "Upload error: " err.Message, "Debug", "Icon!"
+        return false
+    }
+}
+
+; ========== HELPER: CONVERT STRING TO BUFFER ==========
+
+StrToBuffer(str) {
+    ; Get required buffer size
+    size := StrPut(str, "UTF-8") - 1  ; -1 to exclude null terminator
+    
+    ; Create buffer and write string
+    buf := Buffer(size)
+    StrPut(str, buf, "UTF-8")
+    
+    return buf
+}
+
+SendMacroSubmissionWebhook(macroName, category, description, zipPath, submitter) {
+    global WEBHOOK_URL
+    
+    if (WEBHOOK_URL = "")
+        return false
+    
+    try {
+        SplitPath zipPath, &fileName
+        fileSize := 0
+        Loop Files, zipPath
+            fileSize := A_LoopFileSize
+        
+        fileSizeMB := Round(fileSize / (1024 * 1024), 2)
+        timestamp := FormatTime(, "yyyy-MM-ddTHH:mm:ssZ")
+        
+        ; Build embed
+        embed := '{"embeds":[{"title":"📤 New Macro Submission",'
+               . '"description":"A developer has submitted a new macro for review",'
+               . '"color":3447003,'
+               . '"timestamp":"' timestamp '",'
+               . '"fields":['
+               . '{"name":"👤 Developer","value":"' JsonEscape(submitter) '","inline":true},'
+               . '{"name":"📦 Macro Name","value":"' JsonEscape(macroName) '","inline":true},'
+               . '{"name":"📁 Category","value":"' JsonEscape(category) '","inline":true},'
+               . '{"name":"📄 File","value":"' JsonEscape(fileName) '","inline":true},'
+               . '{"name":"💾 Size","value":"' fileSizeMB ' MB","inline":true},'
+               . '{"name":"📅 Submitted","value":"' FormatTime(, "yyyy-MM-dd HH:mm") '","inline":true},'
+               . '{"name":"📝 Description","value":"' JsonEscape(description) '","inline":false}'
+               . '],'
+               . '"footer":{"text":"AHK Vault Developer Portal"}'
+               . '}]}'
+        
+        req := ComObject("WinHttp.WinHttpRequest.5.1")
+        req.SetTimeouts(30000, 30000, 30000, 30000)
+        req.Open("POST", WEBHOOK_URL, false)
+        req.SetRequestHeader("Content-Type", "application/json")
+        req.Send(embed)
+        
+        return (req.Status = 200 || req.Status = 204)
+    } catch {
+        return false
+    }
+}
+
+RefreshStaffPortal() {
+    global staffPortalGui, currentStaffRole
+    
+    if (staffPortalGui) {
+        try staffPortalGui.Destroy()
+    }
+    
+    Sleep 100
+    
+    ; Reopen appropriate portal based on role
+    if (StrLower(currentStaffRole) = "developer" || StrLower(currentStaffRole) = "dev") {
+        CreateDeveloperPortalGui()
+    } else {
+        CreateStaffPortalGui()
+    }
+}
+; ========== MD5 HASH CALCULATION FOR FILE INTEGRITY ==========
+
+CalculateFileMD5(filepath) {
+    try {
+        ; Read file
+        file := FileOpen(filepath, "r")
+        if !file
+            return "ERROR_READING_FILE"
+        
+        fileSize := file.Length
+        buffer := Buffer(fileSize)
+        file.RawRead(buffer, fileSize)
+        file.Close()
+        
+        ; Calculate MD5 using Windows Crypto API
+        static PROV_RSA_FULL := 1
+        static CRYPT_VERIFYCONTEXT := 0xF0000000
+        static CALG_MD5 := 0x00008003
+        
+        hProv := 0
+        hHash := 0
+        
+        ; Acquire crypto context
+        if !DllCall("Advapi32\CryptAcquireContext", "Ptr*", &hProv, "Ptr", 0, "Ptr", 0, 
+                     "UInt", PROV_RSA_FULL, "UInt", CRYPT_VERIFYCONTEXT)
+            return "ERROR_CRYPTO_CONTEXT"
+        
+        ; Create hash object
+        if !DllCall("Advapi32\CryptCreateHash", "Ptr", hProv, "UInt", CALG_MD5, 
+                     "UInt", 0, "UInt", 0, "Ptr*", &hHash) {
+            DllCall("Advapi32\CryptReleaseContext", "Ptr", hProv, "UInt", 0)
+            return "ERROR_CREATE_HASH"
+        }
+        
+        ; Hash data
+        if !DllCall("Advapi32\CryptHashData", "Ptr", hHash, "Ptr", buffer, 
+                     "UInt", fileSize, "UInt", 0) {
+            DllCall("Advapi32\CryptDestroyHash", "Ptr", hHash)
+            DllCall("Advapi32\CryptReleaseContext", "Ptr", hProv, "UInt", 0)
+            return "ERROR_HASH_DATA"
+        }
+        
+        ; Get hash size
+        hashSize := 16  ; MD5 is always 16 bytes
+        hashBuffer := Buffer(hashSize)
+        
+        if !DllCall("Advapi32\CryptGetHashParam", "Ptr", hHash, "UInt", 2, 
+                     "Ptr", hashBuffer, "UInt*", &hashSize, "UInt", 0) {
+            DllCall("Advapi32\CryptDestroyHash", "Ptr", hHash)
+            DllCall("Advapi32\CryptReleaseContext", "Ptr", hProv, "UInt", 0)
+            return "ERROR_GET_HASH"
+        }
+        
+        ; Convert to hex string
+        hashHex := ""
+        loop hashSize {
+            byte := NumGet(hashBuffer, A_Index - 1, "UChar")
+            hashHex .= Format("{:02x}", byte)
+        }
+        
+        ; Cleanup
+        DllCall("Advapi32\CryptDestroyHash", "Ptr", hHash)
+        DllCall("Advapi32\CryptReleaseContext", "Ptr", hProv, "UInt", 0)
+        
+        return hashHex
+        
+    } catch as err {
+        return "ERROR: " err.Message
+    }
+}
+; ========== AUTO-LOAD STAFF SESSION ON STARTUP ==========
+
+LoadStaffSessionOnStartup() {
+    if LoadStaffSession() {
+        OpenStaffPortal()
+        return true
+    }
+    return false
 }
