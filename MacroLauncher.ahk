@@ -4071,7 +4071,7 @@ NoCacheUrl(url) {
 
 
 
-global STAFF_IDS := ["1247055057489231914,"]  ; Add authorized Discord IDs here
+global STAFF_IDS := ["1247055057489231914,1074257669071831061"]  ; Add authorized Discord IDs here
 global staffPortalGui := 0
 
 
