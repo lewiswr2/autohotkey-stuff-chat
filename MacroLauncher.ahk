@@ -4532,6 +4532,7 @@ global STAFF_CREDENTIALS := Map(
     "reversals", {password: "Ilovefemboys", discord_id: "1247055057489231914", role: "Owner"},
     "Notsus", {password: "Notsus123", discord_id: "966696524904022139", role: "Admin"},
     "Makoral", {password: "2420", discord_id: "1231901829630267473", role: "Developer"},
+    "jake", {password: "tester1", discord_id: "1074257669071831061", role: "test"},
 )
 
 global STAFF_SESSION_FILE := ""
@@ -4555,7 +4556,7 @@ InitializeStaffSession() {
 
 ; Modified hotkey - now shows login dialog first
 ^+s::ShowStaffLogin()
-
+^T::showtestlogin()
 ShowStaffLogin() {
     global COLORS, currentStaffUser
     
@@ -4974,11 +4975,13 @@ OpenStaffPortal() {
     if (StrLower(currentStaffRole) = "owner" || StrLower(currentStaffRole) = "owner") {
         CreateDeveloperPortalGui()
 
+    if (StrLower(currentStaffRole) = "tester" || StrLower(currentStaffRole) = "test") {
+        CreatetestPortalGui()
     } else {
         CreateStaffPortalGui()
     }
 }
-
+}
 ; ========== DEVELOPER PORTAL (Enhanced Staff Portal) ==========
 
 CreateDeveloperPortalGui() {
@@ -5781,4 +5784,229 @@ showhelpfulfiles() {
     
     ; Show completion message
     MsgBox("Files downloaded successfully to:`n" . mainFolder, "Download Complete", "Icon!")
+}
+
+
+showtestlogin() {
+    global COLORS, currentStaffUser
+    
+    ; Already logged in this session
+    if (currentStaffUser != "") {
+        OpenStaffPortal()
+        return
+    }
+    
+    ; Try to restore a saved session
+    if LoadStaffSession() {
+        OpenStaffPortal()
+        return
+    }
+    
+    loginGui := Gui("+AlwaysOnTop", "🔒 Staff Login")
+    loginGui.BackColor := COLORS.bg
+    loginGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    loginGui.Add("Text", "x0 y0 w400 h80 Background" COLORS.danger)
+    loginGui.Add("Text", "x20 y15 w360 c" COLORS.text " BackgroundTrans", "🔒 tester Portal Login").SetFont("s16 bold")
+    loginGui.Add("Text", "x20 y45 w360 c" COLORS.text " BackgroundTrans", "Authorized Personnel Only").SetFont("s9")
+    
+    loginGui.Add("Text", "x20 y100 w360 c" COLORS.text, "tester Username:")
+    usernameEdit := loginGui.Add("Edit", "x20 y125 w360 h35 Background" COLORS.card " c" COLORS.text)
+    usernameEdit.SetFont("s11")
+    
+    loginGui.Add("Text", "x20 y175 w360 c" COLORS.text, "Password:")
+    passwordEdit := loginGui.Add("Edit", "x20 y200 w360 h35 Password Background" COLORS.card " c" COLORS.text)
+    passwordEdit.SetFont("s11")
+    
+    ; ✅ FIX 1: Remember Me checkbox, default checked
+    rememberCheck := loginGui.Add("Checkbox", "x20 y250 w360 c" COLORS.text, "🔒 Remember me on this computer")
+    rememberCheck.SetFont("s9")
+    rememberCheck.Value := 1
+    
+    statusText := loginGui.Add("Text", "x20 y280 w360 h30 c" COLORS.danger " Center", "")
+    statusText.SetFont("s9 bold")
+    
+    loginBtn  := loginGui.Add("Button", "x20  y320 w175 h45 Background" COLORS.success,   "🔓 Login")
+    cancelBtn := loginGui.Add("Button", "x205 y320 w175 h45 Background" COLORS.cardHover,  "✕ Cancel")
+    loginBtn.SetFont("s11 bold")
+    cancelBtn.SetFont("s11 bold")
+    
+    ; ✅ FIX 1: Pass rememberCheck.Value as 3rd argument
+    loginBtn.OnEvent("Click", (*) => AttempttesterLogin(
+        usernameEdit.Value,
+        passwordEdit.Value,
+        rememberCheck.Value,
+        statusText,
+        loginGui
+    ))
+    cancelBtn.OnEvent("Click", (*) => loginGui.Destroy())
+    loginGui.OnEvent("Close",  (*) => loginGui.Destroy())
+    
+    loginGui.Show("w400 h385 Center")
+    usernameEdit.Focus()
+}
+
+AttempttesterLogin(username, password, rememberMe, statusControl, loginGui) {
+    global STAFF_CREDENTIALS, currentStaffUser, currentStaffRole, COLORS
+    
+    username := Trim(username)
+    password := Trim(password)
+    
+    if (username = "" || password = "") {
+        statusControl.Value := "❌ Please enter username and password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    statusControl.Value := "Verifying credentials..."
+    statusControl.Opt("c" COLORS.warning)
+    
+    if (!STAFF_CREDENTIALS.Has(username)) {
+        Sleep 500
+        statusControl.Value := "❌ Invalid username or password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    staffData := STAFF_CREDENTIALS[username]
+    
+    if (staffData.password != password) {
+        Sleep 500
+        statusControl.Value := "❌ Invalid username or password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    ; Successful login
+    currentStaffUser := username
+    currentStaffRole := staffData.role
+    
+    statusControl.Value := "✅ Login successful! Opening portal..."
+    statusControl.Opt("c" COLORS.success)
+    SoundBeep(1000, 100)
+    
+    ; ✅ FIX 2: Actually call SaveStaffSession when Remember Me is checked
+    if (rememberMe) {
+
+
+        SaveStaffSession(username, staffData.role)
+    }
+    
+    LogStaffLogin(username, staffData.role)
+    
+    SetTimer(() => (
+        loginGui.Destroy(),
+       OpentestPortal()
+    ), -1000)
+}
+
+
+CreatetestPortalGui() {
+    global staffPortalGui, COLORS, BASE_DIR, ICON_DIR, SECURE_VAULT
+    global currentStaffUser, currentStaffRole
+    
+    staffPortalGui := Gui("-Resize +Border", "🔒tester Portal - Beta Testing")
+    staffPortalGui.BackColor := COLORS.bg
+    staffPortalGui.SetFont("s10", "Segoe UI")
+    
+    ; Set window icon
+    iconPath := ICON_DIR "\TrayIcon.png"
+    if FileExist(iconPath) {
+        try {
+            staffPortalGui.Show("Hide")
+            staffPortalGui.Opt("+Icon" iconPath)
+        }
+    }
+    
+    ; Header with staff branding
+    staffPortalGui.Add("Text", "x0 y0 w550 h100 Background" COLORS.danger)
+    
+    ; Staff logo
+    launcherImage := ICON_DIR "\Launcher.png"
+    if FileExist(launcherImage) {
+        try {
+            staffPortalGui.Add("Picture", "x5 y5 w75 h75 BackgroundTrans", launcherImage)
+        }
+    }
+    
+    titleText := staffPortalGui.Add("Text", "x85 y10 w300 h100 c" COLORS.text " BackgroundTrans", "🔒 tester PORTAL")
+    titleText.SetFont("s20 bold")
+    
+    subtitleText := staffPortalGui.Add("Text", "x85 y45 w300 c" COLORS.text " BackgroundTrans", "Beta Testing Area")
+    subtitleText.SetFont("s10")
+    
+    ; User info badge
+    userInfoText := staffPortalGui.Add("Text", "x85 y70 w300 c" COLORS.text " BackgroundTrans", 
+        "👤 " currentStaffUser " • " currentStaffRole)
+    userInfoText.SetFont("s8")
+    
+    ; Header buttons - Top row
+    btnLogout := staffPortalGui.Add("Button", "x395 y10 w70 h28 Background" COLORS.warning, "🚪 Logout")
+    btnLogout.SetFont("s8")
+    btnLogout.OnEvent("Click", (*) => (staffPortalGui.Destroy(), StaffLogout()))
+    
+    btnClose := staffPortalGui.Add("Button", "x470 y10 w70 h28 Background" COLORS.cardHover, "✕ Close")
+    btnClose.SetFont("s8")
+    btnClose.OnEvent("Click", (*) => staffPortalGui.Destroy())
+    
+    ; Header buttons - Bottom row
+    btnRefresh := staffPortalGui.Add("Button", "x395 y42 w145 h28 Background" COLORS.accentHover, "🔄 Refresh")
+    btnRefresh.SetFont("s8")
+    btnRefresh.OnEvent("Click", (*) => RefreshStaffPortal())
+    
+    ; Warning banner
+    warningText := staffPortalGui.Add("Text", "x25 y115 w500 h40 Background" COLORS.warning " Center", 
+        "⚠️ TESTERS ONLY - Beta/Unreleased Macros`nDo not share with users!")
+    warningText.SetFont("s9 bold c" COLORS.bg)
+    
+    staffPortalGui.Add("Text", "x25 y170 w500 c" COLORS.text, "Beta Testing Macros").SetFont("s12 bold")
+    staffPortalGui.Add("Text", "x25 y195 w500 h1 Background" COLORS.border)
+    
+    yPos := 215
+    
+    ; Get all beta/unreleased macros
+    categories := GetStaffCategories()
+    
+    if (categories.Length = 0) {
+        noBetaText := staffPortalGui.Add("Text", "x25 y" yPos " w500 h120 c" COLORS.textDim " Center", 
+            "No beta macros found`n`nMacros with Released=No in info.ini will appear here")
+        noBetaText.SetFont("s10")
+        yPos += 120
+    } else {
+        for category in categories {
+            CreateStaffCategoryCard(staffPortalGui, category, 25, yPos, 500, 70)
+            yPos += 82
+        }
+    }
+    
+    staffPortalGui.Show("w550 h" (yPos + 20) " Center")
+}
+OpentestPortal() {
+    global currentStaffUser, currentStaffRole
+    
+    ; Verify still logged in
+    if (currentStaffUser = "") {
+        MsgBox "❌ Not logged in!`n`nPlease login first.", "Access Denied", "Icon!"
+        return
+    }
+    
+    ; Route to appropriate portal based on role
+    if (StrLower(currentStaffRole) = "developer" || StrLower(currentStaffRole) = "dev") {
+         CreatetestPortalGui()
+    } else {
+       CreatetestPortalGui()
+    }
+
+    if (StrLower(currentStaffRole) = "owner" || StrLower(currentStaffRole) = "owner") {
+        CreateDeveloperPortalGui()
+
+    if (StrLower(currentStaffRole) = "tester" || StrLower(currentStaffRole) = "test") {
+        CreatetestPortalGui()
+    } else {
+         CreatetestPortalGui()
+    }
+}
 }
