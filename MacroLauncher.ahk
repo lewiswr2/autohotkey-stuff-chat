@@ -4071,7 +4071,7 @@ NoCacheUrl(url) {
 
 
 
-global STAFF_IDS := ["1247055057489231914,1074257669071831061"]  ; Add authorized Discord IDs here
+global STAFF_IDS := ["1247055057489231914,1074257669071831061,1164815454917886013"]  ; Add authorized Discord IDs here
 global staffPortalGui := 0
 
 
@@ -4533,6 +4533,7 @@ global STAFF_CREDENTIALS := Map(
     "Notsus", {password: "Notsus123", discord_id: "966696524904022139", role: "Admin"},
     "Makoral", {password: "2420", discord_id: "1231901829630267473", role: "Developer"},
     "jake", {password: "tester1", discord_id: "1074257669071831061", role: "test"},
+    "testerlogin", {password: "tester11", discord_id: "", role: "test"},
 )
 
 global STAFF_SESSION_FILE := ""
