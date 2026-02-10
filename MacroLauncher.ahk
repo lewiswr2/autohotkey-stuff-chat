@@ -4556,7 +4556,7 @@ InitializeStaffSession() {
 
 ; Modified hotkey - now shows login dialog first
 ^+s::ShowStaffLogin()
-^T::showtestlogin()
+^t::showtestlogin()
 ShowStaffLogin() {
     global COLORS, currentStaffUser
     
