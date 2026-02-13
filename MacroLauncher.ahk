@@ -44,7 +44,133 @@ global COLORS := {
     danger: "0xda3633",
     favorite: "0xfbbf24"
 }
+;;; dev pannel stuff 
 
+
+; ========== STAFF HELP CONTENT ==========
+global STAFF_HELP_TOPICS := [
+    {
+        title: "📋 How to Submit a Macro",
+        content: "1. Click the Submit button in the Developer Portal`n"
+               . "2. Fill in the macro name and description`n"
+               . "3. Select your .zip file (must contain Main.ahk and info.ini)`n"
+               . "4. Click Submit - an admin will review it`n`n"
+               . "Requirements:`n"
+               . "• Main.ahk file (your macro code)`n"
+               . "• info.ini file with Title, Creator, Version`n"
+               . "• Optional: icon.png for a custom icon`n"
+               . "• Max file size: 10MB"
+    },
+    {
+        title: "🔧 Creating info.ini Files",
+        content: "Your info.ini file should look like this:`n`n"
+               . "Title=My Macro Name`n"
+               . "Creator=Your Name`n"
+               . "Version=1.0`n"
+               . "Released=No`n"
+               . "Links=https://discord.gg/example|https://youtube.com/example`n`n"
+               . "Notes:`n"
+               . "• Released=No makes it beta (staff only)`n"
+               . "• Released=Yes makes it public`n"
+               . "• Links are separated by | symbol`n"
+               . "• All fields are optional except Title"
+    },
+    {
+        title: "🎨 Adding Custom Icons",
+        content: "To add a custom icon to your macro:`n`n"
+               . "1. Create a PNG image (recommended 256x256)`n"
+               . "2. Name it 'icon.png'`n"
+               . "3. Place it in your macro folder`n"
+               . "4. Include it in your .zip submission`n`n"
+               . "Supported formats:`n"
+               . "• icon.png (recommended)`n"
+               . "• icon.ico`n"
+               . "• [MacroName].png`n`n"
+               . "If no icon is found, a colored badge with the first letter will be shown."
+    },
+    {
+        title: "🧪 Testing Beta Macros",
+        content: "As staff, you can test unreleased macros:`n`n"
+               . "1. Open Staff Portal (Ctrl+Shift+S)`n"
+               . "2. Navigate to the beta category`n"
+               . "3. Click 'Test' on any unreleased macro`n"
+               . "4. Report any bugs to the developer`n`n"
+               . "Beta macros are marked with Released=No in info.ini`n"
+               . "Regular users cannot see or access these macros.`n`n"
+               . "To release a macro, change Released=No to Released=Yes"
+    },
+    {
+        title: "⚠️ Common Issues",
+        content: "Macro won't appear in staff portal:`n"
+               . "• Make sure info.ini has Released=No`n"
+               . "• Check that Main.ahk exists`n"
+               . "• Verify the macro is in a category folder (not in icons/buttons)`n`n"
+               . "Submission failed:`n"
+               . "• File might be too large (max 10MB)`n"
+               . "• Check your internet connection`n"
+               . "• Make sure the .zip is valid`n`n"
+               . "Can't login to staff portal:`n"
+               . "• Verify your credentials with an admin`n"
+               . "• Check that Ctrl+Shift+S hotkey works`n"
+               . "• Try restarting the launcher"
+    },
+    {
+        title: "🔗 Webhook Integration",
+        content: "All staff actions are logged via webhook:`n`n"
+               . "Logged events:`n"
+               . "• Staff login/logout`n"
+               . "• Macro submissions`n"
+               . "• Macro executions`n"
+               . "• Updates installed`n`n"
+               . "Data sent includes:`n"
+               . "• Username and role`n"
+               . "• Computer name`n"
+               . "• Timestamp`n"
+               . "• Action details`n`n"
+               . "This helps administrators monitor activity and review submissions."
+    },
+    {
+        title: "👥 Staff Roles",
+        content: "Role Hierarchy:`n`n"
+               . "Owner - Full access, can manage all macros`n"
+               . "Admin - Can test beta macros, approve submissions`n"
+               . "Developer - Can submit macros, test beta macros`n`n"
+               . "Permissions:`n"
+               . "• All staff can access beta macros`n"
+               . "• Developers can submit new macros`n"
+               . "• Admins/Owners can approve releases`n`n"
+               . "Sessions are saved if you check 'Remember me' during login."
+    },
+    {
+            title: "👥 macro help Detect speed",
+        content: "detect speed`n`n"
+               . "Step 1 – Track X position over time`n"
+               . "example code: https://docs.google.com/document/d/1wY7jZZSErNepGvyFNZIgNoJLSPvUynZHXMURHG0ofp4/edit?usp=sharing"
+
+
+
+                . "this is all for now, if youd like to add anything to help others out feel free to do so"
+    },
+    {
+                    title: "👥 macro help OCR",
+        content: "OCR`n`n"
+               . "OCR help:"
+               . "example code  https://docs.google.com/document/d/1wY7jZZSErNepGvyFNZIgNoJLSPvUynZHXMURHG0ofp4/edit?usp=sharing"
+
+                . "this is all for now, if youd like to add anything to help others out feel free to do so"
+    }
+    
+]
+
+
+
+global HELPFUL_LINKS := [
+    {name: "📺 AHK Vault YouTube", url: "https://www.youtube.com/@Santa_ClauseYT"},
+    {name: "💬 Discord Server", url: "https://discord.gg/tAbYNwRHru"},
+    {name: "📖 AHK v2 Documentation", url: "https://www.autohotkey.com/docs/v2/"},
+    {name: "🐛 Report a Bug", url: "https://discord.gg/tAbYNwRHru"},
+    {name: "💡 Feature Requests", url: "https://discord.gg/tAbYNwRHru"}
+]
 ; Stats & Favorites data
 global macroStats := Map()
 global favorites := Map()
@@ -3096,7 +3222,7 @@ ReadMacroInfo(macroDir) {
         Creator: "",
         Version: "",
         Links: "",
-        Released: "Yes"  ; Default to Yes if not specified
+        Released: "Yes"  ; DEFAULT
     }
     
     try {
@@ -3107,8 +3233,10 @@ ReadMacroInfo(macroDir) {
     }
     
     ini := macroDir "\info.ini"
-    if !FileExist(ini)
+    if !FileExist(ini) {
+        ; No info.ini file found - Released will stay "Yes"
         return info
+    }
     
     try {
         txt := FileRead(ini, "UTF-8")
@@ -3116,12 +3244,15 @@ ReadMacroInfo(macroDir) {
         return info
     }
     
+    ; ✅ Parse each line
     for line in StrSplit(txt, "`n") {
-        line := Trim(StrReplace(line, "`r"))
+        line := Trim(StrReplace(line, "`r", ""))
         
+        ; Skip empty lines and comments
         if (line = "" || SubStr(line, 1, 1) = ";" || SubStr(line, 1, 1) = "#")
             continue
         
+        ; Must contain =
         if !InStr(line, "=")
             continue
         
@@ -3131,6 +3262,10 @@ ReadMacroInfo(macroDir) {
         
         k := StrLower(Trim(parts[1]))
         v := Trim(parts[2])
+        
+        ; Remove quotes if present
+        if (SubStr(v, 1, 1) = '"' && SubStr(v, -1) = '"')
+            v := SubStr(v, 2, -1)
         
         switch k {
             case "title":
@@ -3143,7 +3278,7 @@ ReadMacroInfo(macroDir) {
             case "links":
                 info.Links := v
             case "released":
-                info.Released := v
+                info.Released := v  ; ✅ STORE EXACTLY AS-IS
         }
     }
     
@@ -3936,7 +4071,7 @@ NoCacheUrl(url) {
 
 
 
-global STAFF_IDS := ["1247055057489231914,"]  ; Add authorized Discord IDs here
+global STAFF_IDS := ["1247055057489231914,1074257669071831061,1164815454917886013"]  ; Add authorized Discord IDs here
 global staffPortalGui := 0
 
 
@@ -3947,45 +4082,61 @@ GetStaffCategories() {
     global BASE_DIR
     arr := []
     
-    if !DirExist(BASE_DIR)
+
+    
+    if !DirExist(BASE_DIR) {
+        MsgBox "BASE_DIR doesn't exist: " BASE_DIR
         return arr
+    }
+    
+
     
     try {
         Loop Files, BASE_DIR "\*", "D" {
-            folderName := StrLower(A_LoopFileName)
-            if (folderName = "icons" || folderName = "buttons")
-                continue
+            folderName := A_LoopFileName
+            folderNameLower := StrLower(folderName)
             
-            ; Check if category has any unreleased macros
-            if HasUnreleasedMacros(A_LoopFilePath) {
-                arr.Push(A_LoopFileName)
+            debugMsg .= "`n- " folderName
+            
+            if (folderNameLower = "icons" || folderNameLower = "buttons") {
+                debugMsg .= " (SKIPPED - utility folder)"
+                continue
+            }
+            
+            ; Check macros in this category
+            macroCount := 0
+            unreleasedCount := 0
+            
+            Loop Files, A_LoopFilePath "\*", "D" {
+                subFolder := A_LoopFilePath
+                mainFile := subFolder "\Main.ahk"
+                
+                if FileExist(mainFile) {
+                    macroCount++
+                    info := ReadMacroInfo(subFolder)
+                    SplitPath subFolder, &macroName
+             
+                    
+                    if (StrLower(Trim(info.Released)) = "no") {
+                        unreleasedCount++
+
+                    }
+                }
+            }
+            
+            
+            if (unreleasedCount > 0) {
+                arr.Push(folderName)
+
             }
         }
     }
+    
+
     
     return arr
 }
 
-HasUnreleasedMacros(categoryPath) {
-    hasUnreleased := false
-    
-    try {
-        Loop Files, categoryPath "\*", "D" {
-            subFolder := A_LoopFilePath
-            mainFile := subFolder "\Main.ahk"
-            
-            if FileExist(mainFile) {
-                info := ReadMacroInfo(subFolder)
-                if (StrLower(info.Released) = "no") {
-                    hasUnreleased := true
-                    break
-                }
-            }
-        }
-    }
-    
-    return hasUnreleased
-}
 
 CreateStaffCategoryCard(gui, category, x, y, w, h) {
     global COLORS
@@ -4381,6 +4532,9 @@ global STAFF_CREDENTIALS := Map(
     "reversals", {password: "Ilovefemboys", discord_id: "1247055057489231914", role: "Owner"},
     "Notsus", {password: "Notsus123", discord_id: "966696524904022139", role: "Admin"},
     "Makoral", {password: "2420", discord_id: "1231901829630267473", role: "Developer"},
+    "Adelnon", {password: "AHKVaultPasswordCool09", discord_id: "609768512973570049", role: "Developer"},
+    "jake", {password: "tester1", discord_id: "1074257669071831061", role: "test"},
+    "testerlogin", {password: "tester11", discord_id: "", role: "test"},
 )
 
 global STAFF_SESSION_FILE := ""
@@ -4404,37 +4558,30 @@ InitializeStaffSession() {
 
 ; Modified hotkey - now shows login dialog first
 ^+s::ShowStaffLogin()
-
+^t::showtestlogin()
 ShowStaffLogin() {
     global COLORS, currentStaffUser
     
-    ; Check if already logged in
+    ; Already logged in this session
     if (currentStaffUser != "") {
         OpenStaffPortal()
         return
     }
     
-    ; Check for saved session
+    ; Try to restore a saved session
     if LoadStaffSession() {
         OpenStaffPortal()
         return
     }
     
-    ; Show login dialog
     loginGui := Gui("+AlwaysOnTop", "🔒 Staff Login")
     loginGui.BackColor := COLORS.bg
     loginGui.SetFont("s10 c" COLORS.text, "Segoe UI")
     
-    ; Header
     loginGui.Add("Text", "x0 y0 w400 h80 Background" COLORS.danger)
+    loginGui.Add("Text", "x20 y15 w360 c" COLORS.text " BackgroundTrans", "🔒 Staff Portal Login").SetFont("s16 bold")
+    loginGui.Add("Text", "x20 y45 w360 c" COLORS.text " BackgroundTrans", "Authorized Personnel Only").SetFont("s9")
     
-    titleText := loginGui.Add("Text", "x20 y15 w360 c" COLORS.text " BackgroundTrans", "🔒 Staff Portal Login")
-    titleText.SetFont("s16 bold")
-    
-    subtitleText := loginGui.Add("Text", "x20 y45 w360 c" COLORS.text " BackgroundTrans", "Authorized Personnel Only")
-    subtitleText.SetFont("s9")
-    
-    ; Login form
     loginGui.Add("Text", "x20 y100 w360 c" COLORS.text, "Staff Username:")
     usernameEdit := loginGui.Add("Edit", "x20 y125 w360 h35 Background" COLORS.card " c" COLORS.text)
     usernameEdit.SetFont("s11")
@@ -4443,61 +4590,41 @@ ShowStaffLogin() {
     passwordEdit := loginGui.Add("Edit", "x20 y200 w360 h35 Password Background" COLORS.card " c" COLORS.text)
     passwordEdit.SetFont("s11")
     
+    ; ✅ FIX 1: Remember Me checkbox, default checked
+    rememberCheck := loginGui.Add("Checkbox", "x20 y250 w360 c" COLORS.text, "🔒 Remember me on this computer")
+    rememberCheck.SetFont("s9")
+    rememberCheck.Value := 1
     
-    ; Status text
     statusText := loginGui.Add("Text", "x20 y280 w360 h30 c" COLORS.danger " Center", "")
     statusText.SetFont("s9 bold")
     
-    ; Buttons
-    loginBtn := loginGui.Add("Button", "x20 y320 w175 h45 Background" COLORS.success, "🔓 Login")
+    loginBtn  := loginGui.Add("Button", "x20  y320 w175 h45 Background" COLORS.success,   "🔓 Login")
+    cancelBtn := loginGui.Add("Button", "x205 y320 w175 h45 Background" COLORS.cardHover,  "✕ Cancel")
     loginBtn.SetFont("s11 bold")
-    
-    cancelBtn := loginGui.Add("Button", "x205 y320 w175 h45 Background" COLORS.cardHover, "✕ Cancel")
     cancelBtn.SetFont("s11 bold")
     
-    ; Event handlers
+    ; ✅ FIX 1: Pass rememberCheck.Value as 3rd argument
     loginBtn.OnEvent("Click", (*) => AttemptStaffLogin(
-        usernameEdit.Value, 
-        passwordEdit.Value,  
-        statusText, 
+        usernameEdit.Value,
+        passwordEdit.Value,
+        rememberCheck.Value,
+        statusText,
         loginGui
     ))
-    
     cancelBtn.OnEvent("Click", (*) => loginGui.Destroy())
+    loginGui.OnEvent("Close",  (*) => loginGui.Destroy())
     
-    ; Allow Enter key to submit
-    usernameEdit.OnEvent("Focus", (*) => (
-        HotIfWinActive("ahk_id " loginGui.Hwnd),
-        Hotkey("Enter", (*) => AttemptStaffLogin(
-            usernameEdit.Value, 
-            passwordEdit.Value, 
-
-            statusText, 
-            loginGui
-        ), "On")
-    ))
-    
-    passwordEdit.OnEvent("Focus", (*) => (
-        HotIfWinActive("ahk_id " loginGui.Hwnd),
-        Hotkey("Enter", (*) => AttemptStaffLogin(
-            usernameEdit.Value, 
-            passwordEdit.Value, 
-
-            statusText, 
-            loginGui
-        ), "On")
-    ))
-    
-    loginGui.OnEvent("Close", (*) => loginGui.Destroy())
     loginGui.Show("w400 h385 Center")
-    
-    ; Focus username field
     usernameEdit.Focus()
 }
 
-AttemptStaffLogin(username, password,  statusControl, loginGui) {
+
+; ============================================================
+; REPLACE 2: AttemptStaffLogin
+; ============================================================
+AttemptStaffLogin(username, password, rememberMe, statusControl, loginGui) {
     global STAFF_CREDENTIALS, currentStaffUser, currentStaffRole, COLORS
-        global STAFF_USERNAME, STAFF_ROLE
+    
     username := Trim(username)
     password := Trim(password)
     
@@ -4511,9 +4638,8 @@ AttemptStaffLogin(username, password,  statusControl, loginGui) {
     statusControl.Value := "Verifying credentials..."
     statusControl.Opt("c" COLORS.warning)
     
-    ; Check credentials
     if (!STAFF_CREDENTIALS.Has(username)) {
-        Sleep 500  ; Prevent timing attacks
+        Sleep 500
         statusControl.Value := "❌ Invalid username or password"
         statusControl.Opt("c" COLORS.danger)
         SoundBeep(500, 200)
@@ -4523,14 +4649,14 @@ AttemptStaffLogin(username, password,  statusControl, loginGui) {
     staffData := STAFF_CREDENTIALS[username]
     
     if (staffData.password != password) {
-        Sleep 500  ; Prevent timing attacks
+        Sleep 500
         statusControl.Value := "❌ Invalid username or password"
         statusControl.Opt("c" COLORS.danger)
         SoundBeep(500, 200)
         return
     }
     
-    ; Login successful
+    ; Successful login
     currentStaffUser := username
     currentStaffRole := staffData.role
     
@@ -4538,12 +4664,15 @@ AttemptStaffLogin(username, password,  statusControl, loginGui) {
     statusControl.Opt("c" COLORS.success)
     SoundBeep(1000, 100)
     
-    ; Save session if remember me is checked
+    ; ✅ FIX 2: Actually call SaveStaffSession when Remember Me is checked
+    if (rememberMe) {
 
-    ; Log the login
+
+        SaveStaffSession(username, staffData.role)
+    }
+    
     LogStaffLogin(username, staffData.role)
     
-    ; Close login and open portal
     SetTimer(() => (
         loginGui.Destroy(),
         OpenStaffPortal()
@@ -4551,75 +4680,98 @@ AttemptStaffLogin(username, password,  statusControl, loginGui) {
 }
 
 
-
-
-
+; ============================================================
+; REPLACE 3: SaveStaffSession
+; ============================================================
 SaveStaffSession(username, role) {
     global STAFF_SESSION_FILE
 
-
-    if (STAFF_SESSION_FILE = "") {
-
+    if (STAFF_SESSION_FILE = "")
         return false
-    }
+
+; Get directory from file path
+; Get the directory of the file
+; declare variables
+dir := ""           ; ensure the variable exists
+SplitPath(STAFF_SESSION_FILE, &dummy, &dir)  ; get the dir via VarRef
+DirCreate(dir)     ; create the directory
+
+
+
+
+; Create the directory
+DirCreate(dir)  ; pass the variable
+
+
+
 
     sessionData := username "|" role "|" A_Now
-    encrypted := EncryptStaffSession(sessionData)
 
     try {
-        FileAppend encrypted, STAFF_SESSION_FILE, "UTF-8"
-    } catch as err {
-        MsgBox "FileAppend FAILED:`n" err.Message
-        return false
-    }
-
-    if FileExist(STAFF_SESSION_FILE) {
-
+        FileDelete STAFF_SESSION_FILE
+        FileAppend sessionData, STAFF_SESSION_FILE, "UTF-8"
         return true
-
-
+    } catch as e {
+        MsgBox "SaveStaffSession FAILED:`n" e.Message
+        return false
     }
 }
 
 
-
+; ============================================================
+; REPLACE 4: LoadStaffSession
+; ============================================================
 LoadStaffSession() {
-    global STAFF_SESSION_FILE
-
-    if (STAFF_SESSION_FILE = "") {
-
+    global STAFF_SESSION_FILE, currentStaffUser, currentStaffRole, STAFF_CREDENTIALS
+    
+    if (STAFF_SESSION_FILE = "")
+        return false
+    
+    if !FileExist(STAFF_SESSION_FILE)
+        return false
+    
+    raw := ""
+    try {
+        raw := Trim(FileRead(STAFF_SESSION_FILE, "UTF-8"))
+    } catch {
         return false
     }
+    
+    if (raw = "")
+        return false
+    
+    ; ✅ FIX 4: Plain text - just split directly, no decrypt needed
+    parts := StrSplit(raw, "|")
+    
+    if (parts.Length < 3)
+        return false
+    
+    username  := parts[1]
+    role      := parts[2]
+    savedTime := parts[3]
+    
+    ; Check session not older than 30 days
+; savedTime MUST be a valid AHK datetime (14 digits)
+if !RegExMatch(savedTime, "^\d{14}$") {
+    try FileDelete STAFF_SESSION_FILE
+    return false
+}
 
-    if !FileExist(STAFF_SESSION_FILE) {
+ageDays := DateDiff(A_Now, savedTime, "Days")
+if (ageDays > 30) {
+    try FileDelete STAFF_SESSION_FILE
+    return false
+}
 
+    
+    ; Check username still valid
+    if !STAFF_CREDENTIALS.Has(username) {
+        try FileDelete STAFF_SESSION_FILE
         return false
     }
-
-    raw := FileRead(STAFF_SESSION_FILE, "UTF-8")
-
-    if (raw = "") {
-
-        return false
-    }
-
-    decrypted := EncryptStaffSession(raw)  ; XOR is symmetric
-
-    parts := StrSplit(decrypted, "|")
-
-    if (parts.Length < 3) {
-        MsgBox "LoadStaffSession: invalid session format`n" decrypted
-        return false
-    }
-
-    username := parts[1]
-    role := parts[2]
-
-    ; ✅ store session state
-    global STAFF_USERNAME := username
-    global STAFF_ROLE := role
-
-    MsgBox "Auto-login OK`nUser: " username "`nRole: " role
+    
+    currentStaffUser := username
+    currentStaffRole := role
     return true
 }
 
@@ -4821,8 +4973,17 @@ OpenStaffPortal() {
     } else {
         CreateStaffPortalGui()
     }
-}
 
+    if (StrLower(currentStaffRole) = "owner" || StrLower(currentStaffRole) = "owner") {
+        CreateDeveloperPortalGui()
+
+    if (StrLower(currentStaffRole) = "tester" || StrLower(currentStaffRole) = "test") {
+        CreatetestPortalGui()
+    } else {
+        CreateStaffPortalGui()
+    }
+}
+}
 ; ========== DEVELOPER PORTAL (Enhanced Staff Portal) ==========
 
 CreateDeveloperPortalGui() {
@@ -4865,6 +5026,12 @@ CreateDeveloperPortalGui() {
     userInfoText.SetFont("s8")
     
     ; Header buttons - Top row
+    btnHelp := staffPortalGui.Add("Button", "x320 y10 w70 h28 Background" COLORS.accentAlt, "❓ Help")
+    btnHelp.SetFont("s8")
+    btnHelp.OnEvent("Click", (*) => ShowStaffHelp())
+    btnHelp := staffPortalGui.Add("Button", "x395 y70 w70 h28 Background" COLORS.accentAlt, " helpful files")
+    btnHelp.SetFont("s8")
+    btnHelp.OnEvent("Click", (*) => Showhelpfulfiles())
     btnLogout := staffPortalGui.Add("Button", "x395 y10 w70 h28 Background" COLORS.warning, "🚪 Logout")
     btnLogout.SetFont("s8")
     btnLogout.OnEvent("Click", (*) => (staffPortalGui.Destroy(), StaffLogout()))
@@ -4874,12 +5041,16 @@ CreateDeveloperPortalGui() {
     btnClose.OnEvent("Click", (*) => staffPortalGui.Destroy())
     
     ; Header buttons - Bottom row
+btnLinks := staffPortalGui.Add("Button", "x320 y42 w70 h28 Background0x1f6feb", "🔗 Links")
+    btnLinks.SetFont("s8")
+    btnLinks.OnEvent("Click", (*) => ShowHelpfulLinks()) 
+    
     btnRefresh := staffPortalGui.Add("Button", "x395 y42 w145 h28 Background" COLORS.accentHover, "🔄 Refresh")
     btnRefresh.SetFont("s8")
     btnRefresh.OnEvent("Click", (*) => RefreshStaffPortal())
     
     ; DEVELOPER EXCLUSIVE: Submit Macro Section
-  staffPortalGui.Add("Text", "x25 y115 w500 h60 Background0x1f6feb Border")
+    staffPortalGui.Add("Text", "x25 y115 w500 h60 Background0x1f6feb Border")
     
     submitTitle := staffPortalGui.Add("Text", "x35 y125 w400 c" COLORS.text " BackgroundTrans", "📤 Submit New Macro")
     submitTitle.SetFont("s12 bold")
@@ -4919,7 +5090,6 @@ CreateDeveloperPortalGui() {
     
     staffPortalGui.Show("w550 h" (yPos + 20) " Center")
 }
-
 ; ========== MACRO SUBMISSION DIALOG ==========
 
 ShowMacroSubmissionDialog() {
@@ -5431,10 +5601,414 @@ CalculateFileMD5(filepath) {
 }
 ; ========== AUTO-LOAD STAFF SESSION ON STARTUP ==========
 
+
 LoadStaffSessionOnStartup() {
+    ; ✅ FIX 5: Do NOT call OpenStaffPortal() here.
+    ;    This runs inside InitializeSecureVault() which is called BEFORE
+    ;    CreateMainGui(). Opening a Gui this early crashes silently.
+    ;    Just restore the session state into globals.
+    ;    Ctrl+Shift+S -> ShowStaffLogin() -> sees currentStaffUser != "" -> skips login.
+    LoadStaffSession()
+    return false
+}
+
+
+HasUnreleasedMacros(categoryPath) {
+    hasUnreleased := false
+    unreleasedCount := 0
+    
+    try {
+        Loop Files, categoryPath "\*", "D" {
+            subFolder := A_LoopFilePath
+            mainFile := subFolder "\Main.ahk"
+            
+            if FileExist(mainFile) {
+                info := ReadMacroInfo(subFolder)
+                
+                ; ✅ DEBUG OUTPUT
+                SplitPath subFolder, &macroName
+                ; MsgBox "Checking: " macroName "`nReleased: " info.Released
+                
+                if (StrLower(info.Released) = "no") {
+                    hasUnreleased := true
+                    unreleasedCount++
+                }
+            }
+        }
+    }
+    
+    ; ✅ DEBUG: Show count
+    if (unreleasedCount > 0) {
+        SplitPath categoryPath, &catName
+        ; MsgBox catName " has " unreleasedCount " unreleased macro(s)"
+    }
+    
+    return hasUnreleased
+}
+ShowStaffHelp() {
+    global COLORS, STAFF_HELP_TOPICS
+    
+    helpGui := Gui("+Resize", "Staff Portal Help")
+    helpGui.BackColor := COLORS.bg
+    helpGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    helpGui.Add("Text", "x0 y0 w700 h60 Background" COLORS.accentAlt)
+    helpGui.Add("Text", "x20 y15 w660 h30 c" COLORS.text " BackgroundTrans", "❓ Staff Portal Help").SetFont("s16 bold")
+    
+    ; Help topics list
+    helpGui.Add("Text", "x20 y80 w200 c" COLORS.text, "Help Topics:").SetFont("s11 bold")
+    
+    topicsList := helpGui.Add("ListBox", "x20 y110 w200 h430 Background" COLORS.card " c" COLORS.text)
+    
+    for topic in STAFF_HELP_TOPICS {
+        topicsList.Add([topic.title])
+    }
+    
+    ; Content display
+    helpGui.Add("Text", "x240 y80 w440 c" COLORS.text, "Topic Details:").SetFont("s11 bold")
+    
+    contentEdit := helpGui.Add("Edit", "x240 y110 w440 h430 ReadOnly Multi Background" COLORS.card " c" COLORS.text)
+    contentEdit.SetFont("s9", "Consolas")
+    
+    ; Show first topic by default
+    if (STAFF_HELP_TOPICS.Length > 0) {
+        topicsList.Choose(1)
+        contentEdit.Value := STAFF_HELP_TOPICS[1].content
+    }
+    
+    ; Update content when topic changes
+    topicsList.OnEvent("Change", (*) => UpdateHelpContent(topicsList, contentEdit))
+    
+    ; Close button
+    closeBtn := helpGui.Add("Button", "x240 y555 w440 h40 Background" COLORS.danger, "Close")
+    closeBtn.SetFont("s11 bold")
+    closeBtn.OnEvent("Click", (*) => helpGui.Destroy())
+    
+    helpGui.Show("w700 h615 Center")
+}
+
+UpdateHelpContent(topicsControl, contentControl) {
+    global STAFF_HELP_TOPICS
+    
+    selectedIndex := topicsControl.Value
+    if (selectedIndex > 0 && selectedIndex <= STAFF_HELP_TOPICS.Length) {
+        contentControl.Value := STAFF_HELP_TOPICS[selectedIndex].content
+    }
+}
+ShowHelpfulLinks() {
+    global COLORS, HELPFUL_LINKS
+    
+    linksGui := Gui("+AlwaysOnTop", "Helpful Links")
+    linksGui.BackColor := COLORS.bg
+    linksGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    ; Header
+    linksGui.Add("Text", "x0 y0 w500 h60 Background0x1f6feb")
+    linksGui.Add("Text", "x20 y15 w460 h30 c" COLORS.text " BackgroundTrans", "🔗 Helpful Links").SetFont("s16 bold")
+    
+    yPos := 80
+    
+    for link in HELPFUL_LINKS {
+        ; Link card
+        linksGui.Add("Text", "x20 y" yPos " w460 h45 Background" COLORS.card)
+        
+        ; Link name
+        nameText := linksGui.Add("Text", "x35 y" (yPos + 13) " w350 c" COLORS.text " BackgroundTrans", link.name)
+        nameText.SetFont("s10 bold")
+        
+        ; Open button
+        currentUrl := link.url
+        openBtn := linksGui.Add("Button", "x395 y" (yPos + 8) " w70 h30 Background" COLORS.accentAlt, "Open")
+        openBtn.SetFont("s9")
+        openBtn.OnEvent("Click", (*) => SafeOpenURL(currentUrl))
+        
+        yPos += 55
+    }
+    
+    ; Close button
+    closeBtn := linksGui.Add("Button", "x20 y" yPos " w460 h40 Background" COLORS.danger, "Close")
+    closeBtn.SetFont("s11 bold")
+    closeBtn.OnEvent("Click", (*) => linksGui.Destroy())
+    
+    linksGui.Show("w500 h" (yPos + 60) " Center")
+}
+
+
+
+
+showhelpfulfiles() {
+    ; Get the user's Downloads folder path
+    downloadsPath := A_MyDocuments . "\..\Downloads"
+    
+    ; Define your files to download with their destination folders
+    ; Format: [URL, FolderName, FileName]
+    filesToDownload := [
+        ["https://www.dropbox.com/scl/fi/vc3kv1npp6f5nlkdkyffr/OCR.ahk?rlkey=zuikqfuskcspwba2bly3rt4jc&st=3vbnxi5n&dl=1", "OCR library", "OCR.ahk"],
+        ["https://www.dropbox.com/scl/fi/yh4vf2rapmjtfl1gpiran/Pin.ahk?rlkey=o36mq4wmh51z9ovfebkencvqs&e=1&st=mwp9z7rc&dl=1", "Red border library", "Pin.ahk"],
+        ["https://www.dropbox.com/scl/fi/8jca5gaeba04gq326dslk/ShinsImageScanClass.ahk?rlkey=k9zwryasv06ys9f2onucw4hyg&st=jpgzwx4m&dl=1", "Better image/ps library", "ShinsImageScanClass.ahk"],
+        ; Add more files as needed
+    ]
+    
+    ; Create a main folder for organization (optional)
+    mainFolder := downloadsPath . "\HelpfulFiles"
+    if !DirExist(mainFolder)
+        DirCreate(mainFolder)
+    
+    ; Download and organize each file
+    for index, fileInfo in filesToDownload {
+        url := fileInfo[1]
+        folderName := fileInfo[2]
+        fileName := fileInfo[3]
+        
+        ; Create subfolder if it doesn't exist
+        targetFolder := mainFolder . "\" . folderName
+        if !DirExist(targetFolder)
+            DirCreate(targetFolder)
+        
+        ; Full path for the downloaded file
+        targetPath := targetFolder . "\" . fileName
+        
+        ; Download the file
+        try {
+            Download(url, targetPath)
+            ToolTip("Downloaded: " . fileName)
+            Sleep(1000)
+        } catch as err {
+            MsgBox("Error downloading " . fileName . ": " . err.Message)
+        }
+    }
+    
+    ToolTip()
+    
+    ; Open the folder in File Explorer
+    Run(mainFolder)
+    
+    ; Show completion message
+    MsgBox("Files downloaded successfully to:`n" . mainFolder, "Download Complete", "Icon!")
+}
+
+
+showtestlogin() {
+    global COLORS, currentStaffUser
+    
+    ; Already logged in this session
+    if (currentStaffUser != "") {
+        OpenStaffPortal()
+        return
+    }
+    
+    ; Try to restore a saved session
     if LoadStaffSession() {
         OpenStaffPortal()
-        return true
+        return
     }
-    return false
+    
+    loginGui := Gui("+AlwaysOnTop", "🔒 Staff Login")
+    loginGui.BackColor := COLORS.bg
+    loginGui.SetFont("s10 c" COLORS.text, "Segoe UI")
+    
+    loginGui.Add("Text", "x0 y0 w400 h80 Background" COLORS.danger)
+    loginGui.Add("Text", "x20 y15 w360 c" COLORS.text " BackgroundTrans", "🔒 tester Portal Login").SetFont("s16 bold")
+    loginGui.Add("Text", "x20 y45 w360 c" COLORS.text " BackgroundTrans", "Authorized Personnel Only").SetFont("s9")
+    
+    loginGui.Add("Text", "x20 y100 w360 c" COLORS.text, "tester Username:")
+    usernameEdit := loginGui.Add("Edit", "x20 y125 w360 h35 Background" COLORS.card " c" COLORS.text)
+    usernameEdit.SetFont("s11")
+    
+    loginGui.Add("Text", "x20 y175 w360 c" COLORS.text, "Password:")
+    passwordEdit := loginGui.Add("Edit", "x20 y200 w360 h35 Password Background" COLORS.card " c" COLORS.text)
+    passwordEdit.SetFont("s11")
+    
+    ; ✅ FIX 1: Remember Me checkbox, default checked
+    rememberCheck := loginGui.Add("Checkbox", "x20 y250 w360 c" COLORS.text, "🔒 Remember me on this computer")
+    rememberCheck.SetFont("s9")
+    rememberCheck.Value := 1
+    
+    statusText := loginGui.Add("Text", "x20 y280 w360 h30 c" COLORS.danger " Center", "")
+    statusText.SetFont("s9 bold")
+    
+    loginBtn  := loginGui.Add("Button", "x20  y320 w175 h45 Background" COLORS.success,   "🔓 Login")
+    cancelBtn := loginGui.Add("Button", "x205 y320 w175 h45 Background" COLORS.cardHover,  "✕ Cancel")
+    loginBtn.SetFont("s11 bold")
+    cancelBtn.SetFont("s11 bold")
+    
+    ; ✅ FIX 1: Pass rememberCheck.Value as 3rd argument
+    loginBtn.OnEvent("Click", (*) => AttempttesterLogin(
+        usernameEdit.Value,
+        passwordEdit.Value,
+        rememberCheck.Value,
+        statusText,
+        loginGui
+    ))
+    cancelBtn.OnEvent("Click", (*) => loginGui.Destroy())
+    loginGui.OnEvent("Close",  (*) => loginGui.Destroy())
+    
+    loginGui.Show("w400 h385 Center")
+    usernameEdit.Focus()
+}
+
+AttempttesterLogin(username, password, rememberMe, statusControl, loginGui) {
+    global STAFF_CREDENTIALS, currentStaffUser, currentStaffRole, COLORS
+    
+    username := Trim(username)
+    password := Trim(password)
+    
+    if (username = "" || password = "") {
+        statusControl.Value := "❌ Please enter username and password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    statusControl.Value := "Verifying credentials..."
+    statusControl.Opt("c" COLORS.warning)
+    
+    if (!STAFF_CREDENTIALS.Has(username)) {
+        Sleep 500
+        statusControl.Value := "❌ Invalid username or password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    staffData := STAFF_CREDENTIALS[username]
+    
+    if (staffData.password != password) {
+        Sleep 500
+        statusControl.Value := "❌ Invalid username or password"
+        statusControl.Opt("c" COLORS.danger)
+        SoundBeep(500, 200)
+        return
+    }
+    
+    ; Successful login
+    currentStaffUser := username
+    currentStaffRole := staffData.role
+    
+    statusControl.Value := "✅ Login successful! Opening portal..."
+    statusControl.Opt("c" COLORS.success)
+    SoundBeep(1000, 100)
+    
+    ; ✅ FIX 2: Actually call SaveStaffSession when Remember Me is checked
+    if (rememberMe) {
+
+
+        SaveStaffSession(username, staffData.role)
+    }
+    
+    LogStaffLogin(username, staffData.role)
+    
+    SetTimer(() => (
+        loginGui.Destroy(),
+       OpentestPortal()
+    ), -1000)
+}
+
+
+CreatetestPortalGui() {
+    global staffPortalGui, COLORS, BASE_DIR, ICON_DIR, SECURE_VAULT
+    global currentStaffUser, currentStaffRole
+    
+    staffPortalGui := Gui("-Resize +Border", "🔒tester Portal - Beta Testing")
+    staffPortalGui.BackColor := COLORS.bg
+    staffPortalGui.SetFont("s10", "Segoe UI")
+    
+    ; Set window icon
+    iconPath := ICON_DIR "\TrayIcon.png"
+    if FileExist(iconPath) {
+        try {
+            staffPortalGui.Show("Hide")
+            staffPortalGui.Opt("+Icon" iconPath)
+        }
+    }
+    
+    ; Header with staff branding
+    staffPortalGui.Add("Text", "x0 y0 w550 h100 Background" COLORS.danger)
+    
+    ; Staff logo
+    launcherImage := ICON_DIR "\Launcher.png"
+    if FileExist(launcherImage) {
+        try {
+            staffPortalGui.Add("Picture", "x5 y5 w75 h75 BackgroundTrans", launcherImage)
+        }
+    }
+    
+    titleText := staffPortalGui.Add("Text", "x85 y10 w300 h100 c" COLORS.text " BackgroundTrans", "🔒 tester PORTAL")
+    titleText.SetFont("s20 bold")
+    
+    subtitleText := staffPortalGui.Add("Text", "x85 y45 w300 c" COLORS.text " BackgroundTrans", "Beta Testing Area")
+    subtitleText.SetFont("s10")
+    
+    ; User info badge
+    userInfoText := staffPortalGui.Add("Text", "x85 y70 w300 c" COLORS.text " BackgroundTrans", 
+        "👤 " currentStaffUser " • " currentStaffRole)
+    userInfoText.SetFont("s8")
+    
+    ; Header buttons - Top row
+    btnLogout := staffPortalGui.Add("Button", "x395 y10 w70 h28 Background" COLORS.warning, "🚪 Logout")
+    btnLogout.SetFont("s8")
+    btnLogout.OnEvent("Click", (*) => (staffPortalGui.Destroy(), StaffLogout()))
+    
+    btnClose := staffPortalGui.Add("Button", "x470 y10 w70 h28 Background" COLORS.cardHover, "✕ Close")
+    btnClose.SetFont("s8")
+    btnClose.OnEvent("Click", (*) => staffPortalGui.Destroy())
+    
+    ; Header buttons - Bottom row
+    btnRefresh := staffPortalGui.Add("Button", "x395 y42 w145 h28 Background" COLORS.accentHover, "🔄 Refresh")
+    btnRefresh.SetFont("s8")
+    btnRefresh.OnEvent("Click", (*) => RefreshStaffPortal())
+    
+    ; Warning banner
+    warningText := staffPortalGui.Add("Text", "x25 y115 w500 h40 Background" COLORS.warning " Center", 
+        "⚠️ TESTERS ONLY - Beta/Unreleased Macros`nDo not share with users!")
+    warningText.SetFont("s9 bold c" COLORS.bg)
+    
+    staffPortalGui.Add("Text", "x25 y170 w500 c" COLORS.text, "Beta Testing Macros").SetFont("s12 bold")
+    staffPortalGui.Add("Text", "x25 y195 w500 h1 Background" COLORS.border)
+    
+    yPos := 215
+    
+    ; Get all beta/unreleased macros
+    categories := GetStaffCategories()
+    
+    if (categories.Length = 0) {
+        noBetaText := staffPortalGui.Add("Text", "x25 y" yPos " w500 h120 c" COLORS.textDim " Center", 
+            "No beta macros found`n`nMacros with Released=No in info.ini will appear here")
+        noBetaText.SetFont("s10")
+        yPos += 120
+    } else {
+        for category in categories {
+            CreateStaffCategoryCard(staffPortalGui, category, 25, yPos, 500, 70)
+            yPos += 82
+        }
+    }
+    
+    staffPortalGui.Show("w550 h" (yPos + 20) " Center")
+}
+OpentestPortal() {
+    global currentStaffUser, currentStaffRole
+    
+    ; Verify still logged in
+    if (currentStaffUser = "") {
+        MsgBox "❌ Not logged in!`n`nPlease login first.", "Access Denied", "Icon!"
+        return
+    }
+    
+    ; Route to appropriate portal based on role
+    if (StrLower(currentStaffRole) = "developer" || StrLower(currentStaffRole) = "dev") {
+         CreatetestPortalGui()
+    } else {
+       CreatetestPortalGui()
+    }
+
+    if (StrLower(currentStaffRole) = "owner" || StrLower(currentStaffRole) = "owner") {
+        CreateDeveloperPortalGui()
+
+    if (StrLower(currentStaffRole) = "tester" || StrLower(currentStaffRole) = "test") {
+        CreatetestPortalGui()
+    } else {
+         CreatetestPortalGui()
+    }
+}
 }
