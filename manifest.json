@@ -1,5 +1,5 @@
 {
-  "version": "1.1.2",
+  "version": "1.1.3",
   "launcher_version": "1.0.3",
   "admin_version": "1.0.3",
   "admin_update_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Admin.ahk",
@@ -38,7 +38,6 @@
     "992980380267323432": "358851400"
   },
   "changelog": [
-    "⬆️Added The Level Up Macro",
-    "🛑Added An Anti Afk macro"
+    "🐟Added The Fisch Macro"
   ]
 }
