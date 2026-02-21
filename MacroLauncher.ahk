@@ -4533,7 +4533,10 @@ global STAFF_CREDENTIALS := Map(
     "Notsus", {password: "Notsus123", discord_id: "966696524904022139", role: "Admin"},
     "Makoral", {password: "2420", discord_id: "1231901829630267473", role: "Developer"},
     "Adelnon", {password: "AHKVaultPasswordCool09", discord_id: "609768512973570049", role: "Developer"},
-    "jake", {password: "tester1", discord_id: "1074257669071831061", role: "test"},
+    "Jake", {password: "tester1", discord_id: "1074257669071831061", role: "test"},
+    "Dillon", {password: "$Monyun$1562", discord_id: "1007851991923445870", role: "test"},
+    "Timeless", {password: "Water26", discord_id: "1448846146276560946", role: "test"},
+    "Everett", {password: "9@=vD7wbd24z", discord_id: "1368373782342799450", role: "test"},
     "testerlogin", {password: "tester11", discord_id: "", role: "test"},
 )
 
