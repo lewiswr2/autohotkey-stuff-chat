@@ -4537,7 +4537,11 @@ global STAFF_CREDENTIALS := Map(
     "Dillon", {password: "$Monyun$1562", discord_id: "1007851991923445870", role: "test"},
     "Timeless", {password: "Water26", discord_id: "1448846146276560946", role: "test"},
     "Everett", {password: "9@=vD7wbd24z", discord_id: "1368373782342799450", role: "test"},
-    "testerlogin", {password: "tester11", discord_id: "", role: "test"},
+    "Declare", {password: "Declare001", discord_id: "412600698824425472", role: "test"},
+    "Shifty", {password: "IloveJesus", discord_id: "1089231808656310284", role: "test"},
+    "Silent", {password: "Silent1234", discord_id: "757288089889538138", role: "test"},
+    "Kamdyn", {password: "2026iscool", discord_id: "1231664032549961750", role: "test"},
+    "Tentuxs", {password: "123456", discord_id: "805092690206785577", role: "test"},
 )
 
 global STAFF_SESSION_FILE := ""
