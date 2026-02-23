@@ -4542,6 +4542,7 @@ global STAFF_CREDENTIALS := Map(
     "Silent", {password: "Silent1234", discord_id: "757288089889538138", role: "test"},
     "Kamdyn", {password: "2026iscool", discord_id: "1231664032549961750", role: "test"},
     "Tentuxs", {password: "123456", discord_id: "805092690206785577", role: "test"},
+    "dark", {password: "dark1234", discord_id: "872530653411962880", role: "test"},
 )
 
 global STAFF_SESSION_FILE := ""
