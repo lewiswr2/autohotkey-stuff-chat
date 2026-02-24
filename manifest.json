@@ -1,5 +1,5 @@
 {
-  "version": "1.1.6",
+  "version": "1.1.7",
   "launcher_version": "1.0.3",
   "admin_version": "1.0.3",
   "admin_update_url": "https://raw.githubusercontent.com/lewiswr2/autohotkey-stuff-chat/main/Admin.ahk",
@@ -38,6 +38,6 @@
     "992980380267323432": "358851400"
   },
   "changelog": [
-    "🎫 Rebirth Champions Ultimate Season Quests macro!"
+    "🎫 Rebirth Champions Ultimate Season Quests macro fixed settings issue!"
   ]
 }
